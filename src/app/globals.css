@@ -1,0 +1,87 @@
+@import url("https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,100..900;1,100..900&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@font-face {
+  font-family: "tyrs"; /*a name to be used later*/
+  src: url("/SokolTyrs-Regular.ttf"); /*URL to font*/
+}
+
+@font-face {
+  font-family: "fugner";
+  src: url("/SokolFugner-Regular.ttf");
+}
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --primary: #e40521;
+  --secondary: #2d2e88;
+  
+  --background: oklch(0.92 0.013 255.5); /* Odpovídá zhruba slate-200 */
+  --background-2: #cad5e2;
+  --foreground: oklch(0.145 0 0);
+  
+  --menu-btn: #2d2e88;
+  --menu-btns: #e5e7eb;
+  --def-text: #1d293d;
+}
+
+.dark {
+  --background: #1d293d; /* Tmavě modrá #0f172b */
+  --background-2: #0f172b;
+  --foreground: oklch(0.985 0 0);
+
+  --menu-btn: #e40521;
+  --menu-btns: #101828;
+  --def-text: #cad5e2;
+  
+}
+
+@theme inline {
+  /* 3. Mapování pro Tailwind - nepiš sem barvy, jen odkazuj na proměnné */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-background-2: var(--background-2);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  
+  --color-menu-btn: var(--menu-btn);
+  --color-menu-btns: var(--menu-btns);
+  --color-def-text: var(--def-text);
+}
+
+@layer base {
+  body {
+    /* 4. Body teď automaticky použije barvu podle toho, zda je na <html> třída .dark */
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+  p, ul {
+    margin-bottom: 1rem;
+  }
+
+  ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  ul li {
+    position: relative;
+    padding-left: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  ul li::before {
+    content: "";
+    display: inline;
+    position: absolute;
+    left: 0;
+    top: 0.5rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    background-color: var(--primary);
+    border-radius: 50%;
+  }
+}

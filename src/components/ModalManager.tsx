@@ -7,12 +7,6 @@ import { useTracking, ActiveModal } from "@/lib/TrackingContext";
 import { SokolLoader } from "./SokolLoader";
 
 // Dynamický import stránek jako komponent
-const StatsPage = dynamic(() => import("@/app/(inner-app)/statistiky/page"), {
-  loading: () => <SokolLoader />,
-});
-const BoardPage = dynamic(() => import("@/app/(inner-app)/nastenka/page"), {
-  loading: () => <SokolLoader />,
-});
 const InfoPage = dynamic(() => import("@/app/(inner-app)/info/page"), {
   loading: () => <SokolLoader />,
 });
@@ -24,10 +18,6 @@ export function ModalManager() {
 
   const getTitle = () => {
     switch (activeModal) {
-      case "stats":
-        return "Moje Statistiky";
-      case "board":
-        return "Diskuse";
       case "info":
         return "Pravidla a Info";
       default:
@@ -37,10 +27,6 @@ export function ModalManager() {
 
   const renderContent = () => {
     switch (activeModal) {
-      case "stats":
-        return <StatsPage />;
-      case "board":
-        return <BoardPage />;
       case "info":
         return <InfoPage />;
       default:

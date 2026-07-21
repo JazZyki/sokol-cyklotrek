@@ -37,7 +37,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="cs" className={cn("font-sans")} suppressHydrationWarning>
-      <body className={`${WorkSans.variable} antialiased`}>
+      <body className={`${WorkSans.variable} antialiased`} suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
           {children}
           <PWAUpdateHandler />

@@ -1,12 +1,12 @@
 {
-  "name": "PoKraji - stezka kolem katastru Knína",
-  "short_name": "PoKraji",
-  "description": "Překroč své hranice, obejdi ty místní. Stezka kolem katastru Knína",
+  "name": "Cyklotrek 2026",
+  "short_name": "Cyklotrek",
+  "description": "Poznávací cykloturistický závod Sokola Nový Knín",
   "orientation": "portrait",
   "protocol_handlers": [
     {
-      "protocol": "web+ptacek",
-      "url": "/ptacek?url=%s"
+      "protocol": "web+sokol",
+      "url": "/sokol?url=%s"
     }
   ],
   "icons": [
@@ -31,6 +31,6 @@
   "id": "/",
   "start_url": "/",
   "theme_color": "#ffffff",
-  "background_color": "#e40521",
+  "background_color": "#ffffff",
   "display": "standalone"
 }

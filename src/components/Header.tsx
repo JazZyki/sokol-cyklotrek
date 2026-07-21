@@ -1,79 +1,37 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useTheme } from "next-themes";
 import Image from "next/image";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Menu,
   X,
   Map as MapIcon,
-  Trophy,
   BookOpen,
-  MessageSquare,
   LogOut,
   RefreshCw,
   ChevronRight,
   Sun,
   Moon,
-  Monitor,
-  SunMedium,
-  Upload,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { GpxImport } from "@/components/GpxImport";
 import { useTracking, ActiveModal } from "@/lib/TrackingContext";
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
-  const [hasNewMessage, setHasNewMessage] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { setActiveModal, activeModal } = useTracking();
-
-  // --- LOGIKA SLEDOVÁNÍ NOVÝCH ZPRÁV (TEČKA) ---
-  useEffect(() => {
-    const checkNewMessages = async () => {
-      const lastSeen =
-        localStorage.getItem("nastenka_last_seen") || new Date(0).toISOString();
-      const { count } = await supabase
-        .from("team_comments")
-        .select("*", { count: "exact", head: true })
-        .gt("created_at", lastSeen);
-
-      setHasNewMessage(!!count && count > 0);
-    };
-
-    checkNewMessages();
-    const interval = setInterval(checkNewMessages, 30000); // Kontrola každých 30s
-    return () => clearInterval(interval);
-  }, [pathname]);
 
   interface NavItem {
     name: string;
     href: string;
     modal: ActiveModal | undefined;
     icon: any;
-    color?: string;
-    badge?: boolean;
   }
 
   const navItems: NavItem[] = [
-    { name: "Mapa trasy", href: "/mapa", modal: undefined, icon: MapIcon, color: "bg-blue-500" },
-    {
-      name: "Moje Statistiky",
-      href: "/statistiky",
-      modal: "stats",
-      icon: Trophy,
-    },
-    {
-      name: "Diskuse",
-      href: "/nastenka",
-      modal: "board",
-      icon: MessageSquare,
-      badge: hasNewMessage,
-    },
+    { name: "Mapa trasy", href: "/mapa", modal: undefined, icon: MapIcon },
     {
       name: "Pravidla a Info",
       href: "/info",
@@ -119,9 +77,6 @@ export default function Header() {
           className="relative p-2 text-menu-btn hover:bg-slate-100 rounded-xl transition-colors"
         >
           <Menu className="size-7" />
-          {hasNewMessage && (
-            <span className="absolute top-2 right-2 size-3 bg-red-500 border-2 border-white rounded-full animate-pulse" />
-          )}
         </button>
       </header>
 
@@ -170,31 +125,12 @@ export default function Header() {
                   >
                     {item.name}
                   </span>
-                  {item.badge && (
-                    <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full uppercase font-black">
-                      Nové!
-                    </span>
-                  )}
                 </div>
                 <ChevronRight
                   className={`size-5 ${isActive ? "text-primary" : "text-slate-300"}`}
                 />
               </button>
             )})}
-            <div className="w-full flex items-center p-4 rounded-2xl border border-slate-100 bg-menu-btns shadow-sm active:scale-95 transition-all">
-              <div className="p-3 rounded-xl text-white bg-secondary mr-4">
-                <Upload className="size-6" />
-              </div>
-              <div className="flex-grow text-left">
-                <GpxImport
-                  onImportComplete={() => {
-                    setIsOpen(false);
-                    window.location.reload();
-                  }}
-                />
-              </div>
-              <ChevronRight className="size-5 text-slate-300" />
-            </div>
           </nav>
 
           {/* Footer menu */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
   Table, 
@@ -20,43 +20,29 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SokolLoader } from "@/components/SokolLoader";
-import { MapPin, Users, Clock, TrendingUp, Trophy } from "lucide-react";
+import { MapPin, Users, Clock, TrendingUp, Trophy, Trash2, Upload, Route } from "lucide-react";
 import { calculateDistance } from "@/lib/utils";
+import gpxParser from "gpxparser";
 
 // Definice surových dat z DB
 interface TeamRaw {
   id: string;
   team_name: string;
   members: string[];
-  quiz_responses: Record<string, Record<number, number>>;
+  category?: string;
   created_at: string;
-}
-
-interface PoiPoint {
-  id: string;
-  name: string;
-  quiz_data?: any;
-}
-
-interface QuizQuestion {
-  q?: string;
-  a?: string[];
-  c?: number;
-  question?: string;
-  options?: string[];
-  answer?: string;
 }
 
 // Definice agregovaných statistik pro UI
 interface TeamStats {
   teamId: string;
   name: string;
+  category: string;
   members: string[];
-  distance: number;
   timeSeconds: number;
+  visitedPois: number;
+  totalPois: number;
   lastPing: string | null;
-  quizScore: number;
-  totalQuestions: number;
 }
 
 export default function AdminPage() {
@@ -64,11 +50,172 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TeamStats[]>([]);
-  const [pois, setPois] = useState<PoiPoint[]>([]);
+  const poiFileInputRef = useRef<HTMLInputElement>(null);
+
+
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newMembers, setNewMembers] = useState("");
+  const [newCategory, setNewCategory] = useState("Hobíci");
+  const [registering, setRegistering] = useState(false);
+
+  const handleRegisterTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTeamName.trim() || !newMembers.trim()) return;
+
+    setRegistering(true);
+    try {
+      const { error } = await supabase
+        .from("teams")
+        .insert([
+          {
+            team_name: newTeamName.trim(),
+            members: newMembers.split(",").map((m) => m.trim()).filter(Boolean),
+            category: newCategory,
+          },
+        ]);
+
+      if (error) {
+        alert("Chyba při registraci týmu: " + error.message);
+      } else {
+        alert(`Tým "${newTeamName.trim()}" (${newCategory}) byl úspěšně zaregistrován!`);
+        setNewTeamName("");
+        setNewMembers("");
+        setNewCategory("Hobíci");
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Neočekávaná chyba");
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string, teamName: string) => {
+    if (!confirm(`Opravdu chcete smazat tým "${teamName}"? Tím dojde ke smazání všech jeho naměřených GPS bodů, pokroku a odpovědí!`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("teams")
+        .delete()
+        .eq("id", teamId);
+
+      if (error) {
+        alert("Chyba při mazání týmu: " + error.message);
+      } else {
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Neočekávaná chyba");
+    }
+  };
+
+  const handleGpxPoiImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const xml = event.target?.result as string;
+        const gpx = new gpxParser();
+        gpx.parse(xml);
+
+        let poisToInsert: { name: string; title: string; lat: number; lon: number; history_text: string; radius_reach: number }[] = [];
+
+        if (gpx.waypoints && gpx.waypoints.length > 0) {
+          poisToInsert = gpx.waypoints.map((wpt, idx) => ({
+            name: wpt.name || `Bod ${idx + 1}`,
+            title: wpt.name || `Bod ${idx + 1}`,
+            lat: wpt.lat,
+            lon: wpt.lon,
+            history_text: wpt.desc || (wpt as any).cmt || "Navštívený bod.",
+            radius_reach: 30,
+          }));
+        } else if (gpx.tracks && gpx.tracks.length > 0) {
+          const trackPoints = gpx.tracks[0].points;
+          poisToInsert = trackPoints.filter((_, idx) => idx % 25 === 0).map((pt, idx) => ({
+            name: `Bod ${idx + 1}`,
+            title: `Bod ${idx + 1}`,
+            lat: pt.lat,
+            lon: pt.lon,
+            history_text: "Navštívený bod trasy.",
+            radius_reach: 30,
+          }));
+        }
+
+        if (poisToInsert.length === 0) {
+          alert("V GPX souboru nebyly nalezeny žádné body (waypoints).");
+          return;
+        }
+
+        const { error } = await supabase.from("poi_points").insert(poisToInsert);
+
+        if (error) {
+          alert("Chyba při ukládání POI: " + error.message);
+        } else {
+          alert(`Úspěšně nahráno ${poisToInsert.length} POI bodů!`);
+          fetchAdminData();
+        }
+      } catch (err: any) {
+        alert("Chyba při čtení GPX: " + err.message);
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleGpxRouteImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const xml = event.target?.result as string;
+        const gpx = new gpxParser();
+        gpx.parse(xml);
+
+        let coords: [number, number][] = [];
+        if (gpx.tracks && gpx.tracks.length > 0) {
+          gpx.tracks.forEach(track => {
+            track.points.forEach(pt => coords.push([pt.lon, pt.lat]));
+          });
+        }
+
+        if (coords.length === 0) {
+          alert("V GPX souboru nebyly nalezeny žádné body stopy.");
+          return;
+        }
+
+        const geojsonData = {
+          type: "LineString",
+          coordinates: coords,
+        };
+
+        await supabase.from("route_display").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        const { error } = await supabase.from("route_display").insert([{ geojson_data: geojsonData }]);
+
+        if (error) {
+          alert("Chyba při ukládání trasy: " + error.message);
+        } else {
+          alert(`Hlavní trasa byla úspěšně nahrána! (${coords.length} bodů)`);
+        }
+      } catch (err: any) {
+        alert("Chyba při čtení GPX: " + err.message);
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === "sokol2026") {
+    const adminPsw = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "sokol2026";
+    if (password === adminPsw) {
       setIsAuthenticated(true);
       sessionStorage.setItem("admin_auth", "true");
     } else {
@@ -98,13 +245,14 @@ export default function AdminPage() {
       
       if (teamsError) throw teamsError;
 
-      // 2. Fetch POIs for quiz scoring
-      const { data: poisData, error: poisError } = await supabase
+      // 2. Fetch POI progress and total POI count
+      const { data: poiProgressData } = await supabase
+        .from("team_poi_progress")
+        .select("team_id, poi_id");
+
+      const { count: totalPoiCount } = await supabase
         .from("poi_points")
-        .select("id, name, quiz_data");
-      
-      if (poisError) throw poisError;
-      setPois(poisData);
+        .select("id", { count: "exact", head: true });
 
       // 3. Fetch Tracking data for all teams (PAGINATED)
       let allTrackingData: any[] = [];
@@ -129,7 +277,6 @@ export default function AdminPage() {
           allTrackingData = [...allTrackingData, ...chunk];
           from += step;
           if (chunk.length < step) hasMore = false;
-          // Vyšší limit pro admina (všechny týmy)
           if (allTrackingData.length > 50000) hasMore = false;
         } else {
           hasMore = false;
@@ -139,8 +286,8 @@ export default function AdminPage() {
       // Agregace dat
       const stats: TeamStats[] = (teamsData as TeamRaw[]).map(team => {
         const teamPings = allTrackingData.filter(p => p.team_id === team.id);
+        const visitedPois = (poiProgressData || []).filter(p => p.team_id === team.id).length;
         
-        let distance = 0;
         let timeSeconds = 0;
         let lastPing = null;
 
@@ -159,59 +306,23 @@ export default function AdminPage() {
               const start = new Date(pings[0].created_at).getTime();
               const end = new Date(pings[pings.length - 1].created_at).getTime();
               timeSeconds += (end - start) / 1000;
-
-              for (let i = 1; i < pings.length; i++) {
-                distance += calculateDistance(
-                  pings[i-1].lat_val, pings[i-1].lon_val,
-                  pings[i].lat_val, pings[i].lon_val
-                );
-              }
             }
           });
         }
 
-        let quizScore = 0;
-        let totalQuestions = 0;
-
-        poisData.forEach(poi => {
-          const poiResponses = team.quiz_responses?.[poi.id];
-          if (poi.quiz_data) {
-            let quizArray: any[] = [];
-            try {
-              quizArray = Array.isArray(poi.quiz_data) ? poi.quiz_data : [poi.quiz_data];
-              quizArray = quizArray.map(q => {
-                if (q.question && Array.isArray(q.options)) {
-                  return { q: q.question, a: q.options, c: q.options.indexOf(q.answer) };
-                }
-                return q;
-              });
-            } catch(e) {}
-
-            totalQuestions += quizArray.length;
-
-            if (poiResponses) {
-              quizArray.forEach((q, idx) => {
-                if (poiResponses[idx] === q.c) {
-                  quizScore++;
-                }
-              });
-            }
-          }
-        });
-
         return {
           teamId: team.id,
           name: team.team_name,
+          category: team.category || "Hobíci",
           members: team.members,
-          distance,
           timeSeconds,
-          lastPing,
-          quizScore,
-          totalQuestions
+          visitedPois,
+          totalPois: totalPoiCount || 0,
+          lastPing
         };
       });
 
-      setData(stats.sort((a, b) => b.distance - a.distance));
+      setData(stats.sort((a, b) => b.visitedPois - a.visitedPois || a.timeSeconds - b.timeSeconds));
     } catch (err) {
       console.error("Admin data fetch error:", err);
     } finally {
@@ -269,7 +380,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-slate-500">Týmy celkem</CardTitle>
@@ -281,18 +392,7 @@ export default function AdminPage() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Ušlá vzdálenost</CardTitle>
-              <TrendingUp className="size-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {data.reduce((acc, curr) => acc + curr.distance, 0).toFixed(1)} km
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Aktivní týmy</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-500">Aktivní týmy na trati</CardTitle>
               <MapPin className="size-4 text-orange-500" />
             </CardHeader>
             <CardContent>
@@ -301,18 +401,80 @@ export default function AdminPage() {
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Průměrný kvíz</CardTitle>
-              <Trophy className="size-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {data.length > 0 ? (data.reduce((acc, curr) => acc + (curr.quizScore / (curr.totalQuestions || 1)), 0) / data.length * 100).toFixed(0) : 0}%
-              </div>
-            </CardContent>
-          </Card>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Registrace nového týmu</CardTitle>
+            <CardDescription>Zadejte název týmu a jeho členy (oddělené čárkou)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleRegisterTeam} className="flex flex-col md:flex-row gap-4 items-end">
+              <div className="flex-1 w-full space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Název týmu</label>
+                <Input
+                  required
+                  placeholder="Např. Rychlé šípy"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                />
+              </div>
+              <div className="w-full md:w-48 space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Kategorie</label>
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-md text-sm font-medium outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="Hobíci">Hobíci</option>
+                  <option value="Profíci">Profíci</option>
+                  <option value="Elektrokola">Elektrokola</option>
+                </select>
+              </div>
+              <div className="md:flex-2 flex-grow w-full space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Členové týmu (oddělení čárkou)</label>
+                <Input
+                  required
+                  placeholder="Např. Mirek Dušín, Jarka Metelka"
+                  value={newMembers}
+                  onChange={(e) => setNewMembers(e.target.value)}
+                />
+              </div>
+              <Button type="submit" disabled={registering} className="w-full md:w-auto">
+                {registering ? "Registruji..." : "Zaregistrovat"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Nahrávání kontrolních bodů (POI) z GPX</CardTitle>
+            <CardDescription>
+              Vyberte GPX soubor s kontrolními body (Waypoints). Body se nahrají jako elektronické kontroly závodu.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 font-bold cursor-pointer"
+                size="lg"
+                onClick={() => poiFileInputRef.current?.click()}
+              >
+                <MapPin className="size-5 text-primary" /> NAHRÁT KONTROLNÍ BODY (POI) Z GPX (.gpx)
+              </Button>
+              <input
+                ref={poiFileInputRef}
+                type="file"
+                accept=".gpx"
+                onChange={handleGpxPoiImport}
+                className="hidden"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
@@ -329,48 +491,49 @@ export default function AdminPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[200px]">Tým</TableHead>
+                      <TableHead className="w-[180px]">Tým</TableHead>
+                      <TableHead>Kategorie</TableHead>
                       <TableHead>Členové</TableHead>
-                      <TableHead className="text-right">Vzdálenost</TableHead>
                       <TableHead className="text-right">Čas</TableHead>
-                      <TableHead className="text-right">Tempo</TableHead>
-                      <TableHead className="text-right">Kvíz</TableHead>
+                      <TableHead className="text-right">Projeté body</TableHead>
                       <TableHead className="text-right">Poslední ping</TableHead>
+                      <TableHead className="text-right">Akce</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.map((team) => {
-                      const pace = team.distance > 0 ? team.timeSeconds / 60 / team.distance : 0;
                       const lastPingDate = team.lastPing ? new Date(team.lastPing) : null;
                       
                       return (
                         <TableRow key={team.teamId}>
                           <TableCell className="font-bold">{team.name}</TableCell>
+                          <TableCell>
+                            <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                              {team.category}
+                            </span>
+                          </TableCell>
                           <TableCell className="text-slate-500 text-xs">
                             {team.members.join(", ")}
                           </TableCell>
-                          <TableCell className="text-right font-mono font-bold text-primary">
-                            {team.distance.toFixed(2)} km
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell className="text-right font-mono font-bold">
                             {formatTime(team.timeSeconds)}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
-                            {pace > 0 ? `${Math.floor(pace)}:${Math.round((pace % 1) * 60).toString().padStart(2, '0')}` : "--:--"} min/km
+                          <TableCell className="text-right font-mono font-bold text-primary">
+                            {team.visitedPois} / {team.totalPois}
+                          </TableCell>
+
+                           <TableCell className="text-right text-xs text-slate-400">
+                            {lastPingDate ? lastPingDate.toLocaleTimeString() : "nikdy"}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex flex-col items-end">
-                              <span className="font-bold">{team.quizScore} / {team.totalQuestions}</span>
-                              <div className="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                                <div 
-                                  className="h-full bg-yellow-500" 
-                                  style={{ width: `${(team.quizScore / (team.totalQuestions || 1)) * 100}%` }}
-                                />
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-slate-400">
-                            {lastPingDate ? lastPingDate.toLocaleTimeString() : "nikdy"}
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 size-8 rounded-full"
+                              onClick={() => handleDeleteTeam(team.teamId, team.name)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );

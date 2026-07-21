@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { Users, Play, Map as MapIcon, Download, Search } from "lucide-react";
+import { Map as MapIcon, Download, Search } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { SokolText } from "@/components/SokolText";
@@ -22,59 +22,66 @@ interface NavigatorStandalone extends Navigator {
   standalone?: boolean;
 }
 
+interface RegisteredTeam {
+  id: string;
+  team_name: string;
+  members: string[];
+  category?: string;
+}
+
 export default function RegisterPage() {
-  const [teamName, setTeamName] = useState("");
-  const [members, setMembers] = useState("");
+  const [teamsList, setTeamsList] = useState<RegisteredTeam[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [isConfirmed, setIsConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [existingTeam, setExistingTeam] = useState<{
     id: string;
     name: string;
     members: string[];
+    category?: string;
   } | null>(null);
 
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   const router = useRouter();
-  const [mode, setMode] = useState<"register" | "login">("register");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedTeamId || !isConfirmed) return;
+
     setLoading(true);
+    const selectedTeam = teamsList.find((t) => t.id === selectedTeamId);
 
-    const { data, error } = await supabase
-      .from("teams")
-      .select("id, team_name")
-      .ilike("team_name", teamName)
-      .maybeSingle();
-
-    if (error) {
-      alert("Chyba při hledání týmu: " + error.message);
-      setLoading(false);
-      return;
-    }
-
-    if (data) {
-      document.cookie = `knin_team_id=${data.id}; path=/; max-age=86400; SameSite=Lax`;
-      localStorage.setItem("knin_team_id", data.id);
-      localStorage.setItem("knin_team_name", data.team_name);
+    if (selectedTeam) {
+      document.cookie = `knin_team_id=${selectedTeam.id}; path=/; max-age=86400; SameSite=Lax`;
+      localStorage.setItem("knin_team_id", selectedTeam.id);
+      localStorage.setItem("knin_team_name", selectedTeam.team_name);
       
-      // Místo na mapu jdeme na info
-      router.push("/info"); 
+      router.push("/info");
     } else {
-      alert("Tým s tímto názvem nebyl nalezen.");
+      alert("Vybraný tým nebyl nalezen.");
       setLoading(false);
     }
   };
 
- useEffect(() => {
-    // 1. FUNKCE PRO KONTROLU REGISTRACE (Asynchronní)
-    const checkExistingRegistration = async () => {
+  useEffect(() => {
+    const fetchTeamsAndCheckRegistration = async () => {
+      // 1. Stáhnout seznam všech registrovaných týmů
+      const { data: teamsData, error: teamsError } = await supabase
+        .from("teams")
+        .select("id, team_name, members, category")
+        .order("team_name", { ascending: true });
+
+      if (!teamsError && teamsData) {
+        setTeamsList(teamsData);
+      }
+
+      // 2. Kontrola stávajícího přihlášení
       const savedId = localStorage.getItem("knin_team_id");
       const infoSeen = localStorage.getItem("knin_info_seen");
 
       if (savedId) {
-        // Pokud uživatel už má tým A ZÁROVEŇ už viděl info, pošli ho rovnou na mapu
         if (infoSeen === "true") {
           router.push("/mapa");
           return;
@@ -82,7 +89,7 @@ export default function RegisterPage() {
 
         const { data, error } = await supabase
           .from("teams")
-          .select("id, team_name, members")
+          .select("id, team_name, members, category")
           .eq("id", savedId)
           .single();
 
@@ -91,71 +98,36 @@ export default function RegisterPage() {
             id: data.id,
             name: data.team_name,
             members: data.members || [],
+            category: data.category,
           });
         }
       }
       setLoading(false);
     };
 
-    // 2. DETEKCE INSTALACE (PWA)
-    // Zjistíme, jestli aplikace běží v režimu "na ploše"
     const isStandalone = 
       window.matchMedia('(display-mode: standalone)').matches || 
       (window.navigator as NavigatorStandalone).standalone === true;
 
-    // Použijeme requestAnimationFrame, aby React mohl dokončit render
-    // a až pak změnil stav pro tlačítko (řeší to tvůj error s kaskádou)
     requestAnimationFrame(() => {
       if (!isStandalone) {
         setShowInstallBtn(true);
       }
     });
 
-    // 3. EVENT LISTENER PRO ANDROID/CHROME
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      // Pokud prohlížeč vyhodí prompt, ujistíme se, že tlačítko vidíme
       setShowInstallBtn(true);
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    fetchTeamsAndCheckRegistration();
 
-    // 4. SPUŠTĚNÍ KONTROLY DATABÁZE
-    checkExistingRegistration();
-
-    // CLEANUP (Odstranění listeneru při odchodu ze stránky)
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     };
   }, [router]);
-
-  // --- ÚPRAVA 3: REGISTRACE ---
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("teams")
-      .insert([
-        {
-          team_name: teamName,
-          members: members.split(",").map((m) => m.trim()),
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      alert("Chyba při registraci: " + error.message);
-      setLoading(false);
-      return;
-    }
-    localStorage.setItem("knin_team_id", data.id);
-    localStorage.setItem("knin_team_name", data.team_name);
-    
-    // Nový tým jde vždy nejdříve na info
-    router.push("/info");
-  };
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
@@ -176,8 +148,12 @@ export default function RegisterPage() {
     if (confirm("Opravdu chcete odhlásit tým?")) {
       localStorage.clear();
       setExistingTeam(null);
+      setSelectedTeamId("");
+      setIsConfirmed(false);
     }
   };
+
+  const currentSelectedTeam = teamsList.find((t) => t.id === selectedTeamId);
 
   if (loading)
     return (
@@ -214,6 +190,11 @@ export default function RegisterPage() {
                 <h2 className="text-3xl text-secondary font-black">
                   <SokolText text={existingTeam.name} />
                 </h2>
+                {existingTeam.category && (
+                  <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-bold mt-1">
+                    {existingTeam.category}
+                  </span>
+                )}
               </div>
               <div className="bg-slate-100 rounded-lg p-4 border border-slate-100">
                 <div className="flex flex-wrap justify-center gap-2">
@@ -231,7 +212,7 @@ export default function RegisterPage() {
                 <Button
                   onClick={() => router.push("/mapa")}
                   variant={"secondary"}
-                  size={"lg"} // Opraveno z lgx
+                  size={"lg"}
                   className="w-full gap-2"
                 >
                   <MapIcon className="size-5" /> VSTOUPIT DO MAPY
@@ -243,78 +224,74 @@ export default function RegisterPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="flex bg-slate-200 p-1 rounded-xl">
-                <button
-                  onClick={() => setMode("register")}
-                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${
-                    mode === "register"
-                      ? "bg-secondary shadow-sm text-white"
-                      : "text-slate-500"
-                  }`}
-                >
-                  NOVÝ TÝM
-                </button>
-                <button
-                  onClick={() => setMode("login")}
-                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${
-                    mode === "login"
-                      ? "bg-secondary shadow-sm text-white"
-                      : "text-slate-500"
-                  }`}
-                >
-                  MÁM TÝM
-                </button>
-              </div>
-
-              <form
-                onSubmit={mode === "register" ? handleRegister : handleLogin}
-                className="space-y-6"
-              >
-                <p className="text-slate-500 text text-center font-bold">
-                  {mode === "register"
-                    ? "Zaregistruj tým a vyraz na 50km trasu!"
-                    : "Zadej přesný název týmu pro pokračování."}
+              <form onSubmit={handleLogin} className="space-y-6">
+                <p className="text-slate-600 text-center font-bold text-sm">
+                  Vyber svůj tým ze seznamu přihlášených:
                 </p>
 
                 <div className="space-y-4">
-                  <input
+                  <select
                     required
-                    className="w-full p-3 border-2 border-secondary text-slate-700 rounded-xl focus:ring-2 focus:ring-secondary outline-none"
-                    placeholder="Název týmu"
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                  />
+                    className="w-full p-3.5 border-2 border-secondary text-slate-800 font-bold rounded-xl focus:ring-2 focus:ring-secondary outline-none bg-white text-base"
+                    value={selectedTeamId}
+                    onChange={(e) => {
+                      setSelectedTeamId(e.target.value);
+                      setIsConfirmed(false);
+                    }}
+                  >
+                    <option value="">-- Vyber tým --</option>
+                    {teamsList.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.team_name} {team.category ? `(${team.category})` : ""}
+                      </option>
+                    ))}
+                  </select>
 
-                  {mode === "register" && (
-                    <div className="relative">
-                      <Users className="absolute left-3 top-3.5 text-secondary size-5" />
-                      <input
-                        required
-                        className="w-full p-3 pl-10 border-2 border-secondary text-slate-700 rounded-xl focus:ring-2 focus:ring-secondary outline-none"
-                        placeholder="Jan, Marie, Petr..."
-                        value={members}
-                        onChange={(e) => setMembers(e.target.value)}
-                      />
+                  {currentSelectedTeam && (
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-center animate-in fade-in duration-200">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        Členové týmu
+                      </p>
+                      <div className="flex flex-wrap justify-center gap-1.5">
+                        {currentSelectedTeam.members.map((m, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-white px-2.5 py-0.5 rounded-full text-xs font-semibold text-slate-700 border border-slate-200 shadow-2xs"
+                          >
+                            {m}
+                          </span>
+                        ))}
+                      </div>
                     </div>
+                  )}
+
+                  {selectedTeamId && (
+                    <label className="flex items-center gap-3 p-3 bg-secondary/10 rounded-xl border border-secondary/20 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={isConfirmed}
+                        onChange={(e) => setIsConfirmed(e.target.checked)}
+                        className="size-5 rounded border-secondary text-secondary focus:ring-secondary accent-secondary cursor-pointer"
+                      />
+                      <span className="font-bold text-sm text-secondary">
+                        Ano, to jsme my
+                      </span>
+                    </label>
                   )}
                 </div>
 
                 <Button
-                  disabled={loading}
-                  type="submit" // KLÍČOVÉ: Zajistí spuštění onSubmit formuláře
+                  disabled={loading || !selectedTeamId || !isConfirmed}
+                  type="submit"
                   variant={"secondary"}
-                  size={"lg"} // Změněno z lgx na lg (pokud nemáš lgx definované v button.tsx)
-                  className="w-full gap-2" // Přidáno pro jistotu šířky a mezery mezi ikonou a textem
+                  size={"lg"}
+                  className="w-full gap-2 font-bold"
                 >
                   {loading ? (
-                    <SokolLoader /> // Nebo jen text "Načítám..."
-                  ) : mode === "register" ? (
-                    <>
-                      <Play className="size-5" /> START DOBRODRUŽSTVÍ
-                    </>
+                    <SokolLoader />
                   ) : (
                     <>
-                      <Search className="size-5" /> NAJÍT MŮJ TÝM
+                      <Search className="size-5" /> VSTOUPIT DO HRY
                     </>
                   )}
                 </Button>

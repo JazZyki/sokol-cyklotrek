@@ -50,10 +50,10 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [poiPoints, setPoiPoints] = useState<PoiPoint[]>([]);
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
-  const [quizResponses, setQuizResponses] = useState<Record<string, Record<number, number>>>({});
   const [selectedPoi, setSelectedPoi] = useState<PoiPoint | null>(null);
   const router = useRouter();
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [showRoute, setShowRoute] = useState(false);
 
   useEffect(() => {
     // Najdeme elementy podle ID nebo tagů (v layoutu je musíme označit)
@@ -246,32 +246,21 @@ export default function MapPage() {
           .select("poi_id")
           .eq("team_id", teamId);
 
-        const teamName = localStorage.getItem("knin_team_name") || "";
-        const isKrakonos = teamName.toLowerCase() === "krakonos";
+        const teamName = (localStorage.getItem("knin_team_name") || "").trim().toLowerCase();
+        const isAdminTeam = teamName === "admin" || teamName === "krakonos";
+        setShowRoute(isAdminTeam);
 
-        if (progress) {
-          const ids = new Set(progress.map((p) => String(p.poi_id)));
+        if (progress || isAdminTeam) {
+          const ids = new Set(progress ? progress.map((p) => String(p.poi_id)) : []);
           
-          // Speciální bypass pro testera (Krakonoš)
-          if (isKrakonos && pois) {
+          // Speciální bypass pro testera / administrátora (Admin / Krakonoš)
+          if (isAdminTeam && pois) {
             pois.forEach(p => ids.add(String(p.id)));
-            console.log("🎅 Krakonoš detekován: Všechny body odemčeny pro testování.");
+            console.log("🔑 Admin/Test tým detekován: Všechny POI body odemčeny.");
           }
 
           setUnlockedIds(ids);
           console.log("🔓 Odemčené body:", ids.size);
-        }
-
-        // 5. Načtení odpovědí na kvíz
-        const { data: teamData } = await supabase
-          .from("teams")
-          .select("quiz_responses")
-          .eq("id", teamId)
-          .maybeSingle();
-
-        if (teamData?.quiz_responses) {
-          setQuizResponses(teamData.quiz_responses as Record<string, Record<number, number>>);
-          console.log("📝 Načteny předchozí odpovědi na kvíz.");
         }
 
         setDebugMsg("GPS připravena");
@@ -297,7 +286,7 @@ export default function MapPage() {
 
         const distToPoi = calculateDistance(lat, lon, poi.lat, poi.lon) * 1000;
 
-        if (distToPoi <= 20) {
+        if (distToPoi <= 30) {
           const teamId = localStorage.getItem("knin_team_id");
           if (teamId) {
             const { error } = await supabase
@@ -328,26 +317,7 @@ export default function MapPage() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handleQuizAnswer = async (poiId: string, qIdx: number, aIdx: number) => {
-    const teamId = localStorage.getItem("knin_team_id");
-    if (!teamId) return;
 
-    // Aktualizace lokálního stavu
-    const newResponses = {
-      ...quizResponses,
-      [poiId]: {
-        ...(quizResponses[poiId] || {}),
-        [qIdx]: aIdx
-      }
-    };
-    setQuizResponses(newResponses);
-
-    // Uložení do Supabase
-    await supabase
-      .from("teams")
-      .update({ quiz_responses: newResponses })
-      .eq("id", teamId);
-  };
 
   if (loading)
     return (
@@ -361,33 +331,13 @@ export default function MapPage() {
       {/* Info bar */}
       <div className="flex justify-between items-center bg-background p-3 border-t-2 border-primary shadow-inner">
         <div className="flex gap-4 sm:gap-8">
-          {/* Vzdálenost */}
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-def-text uppercase leading-none mb-1">
-              Vzdálenost
-            </span>
-            <span className="text-xl font-bold text-primary leading-none">
-              {totalDistance.toFixed(2)} <span className="text-xs">km</span>
-            </span>
-          </div>
-
           {/* Čas */}
-          <div className="flex flex-col border-l border-slate-200 pl-4">
+          <div className="flex flex-col">
             <span className="text-[10px] font-bold text-def-text uppercase leading-none mb-1">
               Čistý čas
             </span>
-            <span className="text-xl font-bold text-def-text leading-none font-mono">
+            <span className="text-2xl font-black text-primary leading-none font-mono">
               {formatTime(elapsedTime)}
-            </span>
-          </div>
-
-          {/* Tempo */}
-          <div className="hidden flex-col border-l border-slate-200 pl-4 xs:flex">
-            <span className="text-[10px] font-bold text-def-text uppercase leading-none mb-1">
-              Tempo
-            </span>
-            <span className="text-xl font-bold text-def-text leading-none font-mono">
-              {calculatePace()} <span className="text-xs">min/km</span>
             </span>
           </div>
         </div>
@@ -423,8 +373,6 @@ export default function MapPage() {
           isOpen={!!selectedPoi}
           onClose={() => setSelectedPoi(null)}
           isUnlocked={selectedPoi ? unlockedIds.has(selectedPoi.id) : false}
-          savedResponses={selectedPoi ? quizResponses[selectedPoi.id] : {}}
-          onAnswer={handleQuizAnswer}
         />
         <MapWithNoSSR
           routeCoordinates={route}
@@ -434,6 +382,7 @@ export default function MapPage() {
           unlockedIds={unlockedIds}
           onPoiClick={(poi) => setSelectedPoi(poi)}
           isTracking={isTracking}
+          showRoute={showRoute}
         />
       </div>
     </main>

@@ -56,6 +56,7 @@ interface MapProps {
   unlockedIds?: Set<string>;
   onPoiClick?: (poi: PoiPoint) => void;
   isTracking?: boolean;
+  showRoute?: boolean;
 }
 
 interface TrackPoint {
@@ -77,6 +78,7 @@ export default function Map({
   poiPoints = [],
   unlockedIds = new Set(),
   onPoiClick = () => {},
+  showRoute = false,
 }: MapProps) {
   const apiKey = process.env.NEXT_PUBLIC_MAPY_API_KEY;
   // Startujeme na 0, aby první načtení location nespustilo autofocus
@@ -141,7 +143,9 @@ export default function Map({
           forceCenterTrigger={forceCenterTrigger}
         />
 
-        <Polyline positions={routeCoordinates} pathOptions={{ color: "#2d2e88", weight: 8, opacity: 0.8 }} />
+        {showRoute && (
+          <Polyline positions={routeCoordinates} pathOptions={{ color: "#2d2e88", weight: 8, opacity: 0.8 }} />
+        )}
 
         {/* POI body */}
         {poiPoints?.map((poi) => (

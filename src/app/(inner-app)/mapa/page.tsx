@@ -329,14 +329,14 @@ export default function MapPage() {
   return (
     <main className="h-screen w-full flex flex-col overflow-hidden">
       {/* Info bar */}
-      <div className="flex justify-between items-center bg-background p-3 border-t-2 border-primary shadow-inner">
+      <div className="flex justify-between items-center bg-background p-3 border-t-2 border-secondary shadow-inner">
         <div className="flex gap-4 sm:gap-8">
           {/* Čas */}
           <div className="flex flex-col">
             <span className="text-[10px] font-bold text-def-text uppercase leading-none mb-1">
               Čistý čas
             </span>
-            <span className="text-2xl font-black text-primary leading-none font-mono">
+            <span className="text-2xl font-black text-secondary leading-none font-mono">
               {formatTime(elapsedTime)}
             </span>
           </div>
@@ -344,7 +344,7 @@ export default function MapPage() {
 
         <Button
           onClick={handleToggleTracking}
-          variant={isTracking ? "destructive" : "secondary"}
+          variant={isTracking ? "destructive" : "default"}
           className="px-6 h-10 rounded-full font-bold shadow-md uppercase text-xs"
         >
           {isTracking ? "Pauza" : "Pokračovat"}

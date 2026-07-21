@@ -8,7 +8,7 @@ export function Footer() {
   return (
     <footer className="fixed bottom-0 w-full bg-secondary text-white text-center p-4 mt-8">
       <p className="text-sm mb-1">
-        &copy; {new Date().getFullYear()} <strong>PoKraji</strong>. Všechna práva vyhrazena.
+        &copy; {new Date().getFullYear()} <strong>Cyklotrek</strong>. Všechna práva vyhrazena.
       </p>
       <p className="flex justify-center gap-1 text-xs mb-1">
         v{version} <span className="font-normal">|</span>

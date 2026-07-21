@@ -59,9 +59,9 @@ export default function Header() {
 
   return (
     <>
-      <header className="w-full h-18 bg-background border-b-4 border-primary px-4 flex justify-between items-center z-1001 relative shadow-md">
+      <header className="w-full h-18 bg-background border-b-4 border-secondary px-4 flex justify-between items-center z-1001 relative shadow-md">
         <Image
-          src="/pokraji_logo.png"
+          src="/cyklotrek_logo.png"
           alt="Logo"
           width={140}
           height={60}
@@ -92,11 +92,10 @@ export default function Header() {
       >
         <div className="flex flex-col h-full">
           {/* Header menu */}
-          <div className="p-6 flex justify-between items-center border-b border-primary">
-            <h2 className="text-2xl font-bold text-def-text">MENU</h2>
+          <div className="p-10 flex justify-between items-center">
             <button
               onClick={() => setIsOpen(false)}
-              className="p-2 bg-background-2 rounded-full"
+              className="p-2 bg-background-2 rounded-full absolute top-4 right-4 hover:bg-slate-100 transition-colors"
             >
               <X className="size-6 text-menu-btn" />
             </button>
@@ -112,7 +111,7 @@ export default function Header() {
                 onClick={() => handleNavigate(item)}
                 className={`w-full flex items-center p-4 rounded-2xl border transition-all bg-menu-btns text-def-text uppercase ${
                   isActive
-                    ? "border-primary shadow-md ring-1 ring-primary/20 text-primary"
+                    ? "border-secondary shadow-md ring-1 ring-secondary/20 text-primary"
                     : "border-slate-100 shadow-sm active:scale-95"
                 }`}
               >
@@ -127,7 +126,7 @@ export default function Header() {
                   </span>
                 </div>
                 <ChevronRight
-                  className={`size-5 ${isActive ? "text-primary" : "text-slate-300"}`}
+                  className={`size-5 ${isActive ? "text-secondary" : "text-slate-300"}`}
                 />
               </button>
             )})}
@@ -149,7 +148,7 @@ export default function Header() {
                     onClick={() => setTheme(t.id)}
                     className={`flex-1 flex flex-col items-center py-2 rounded-lg transition-all ${
                       theme === t.id
-                        ? "bg-primary text-white shadow-md scale-105"
+                        ? "bg-secondary text-white shadow-md scale-105"
                         : "text-slate-400 dark:text-slate-500 hover:text-slate-600"
                     }`}
                   >
@@ -170,7 +169,7 @@ export default function Header() {
             </button>
             <button
               onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-3 p-3 text-red-500 text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+              className="w-full flex items-center justify-center gap-3 p-3 text-secondary dark:text-white text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
             >
               <LogOut className="size-4" /> ODHLÁSIT TÝM
             </button>

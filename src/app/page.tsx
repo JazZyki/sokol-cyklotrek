@@ -167,8 +167,8 @@ export default function RegisterPage() {
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
         <div className="text-center mb-6">
           <Image
-            src="/pokraji_logo.png"
-            alt="PoTrati Sokol Nový Knín"
+            src="/cyklotrek_logo.png"
+            alt="Sokol Cyklotrek Logo"
             width={277}
             height={71}
             className="w-full h-auto mb-6 object-contain"
@@ -232,14 +232,14 @@ export default function RegisterPage() {
                 <div className="space-y-4">
                   <select
                     required
-                    className="w-full p-3.5 border-2 border-secondary text-slate-800 font-bold rounded-xl focus:ring-2 focus:ring-secondary outline-none bg-white text-base"
+                    className="w-full py-2 px-3.5 border-2 border-secondary text-slate-800 font-bold rounded-xl focus:ring-2 focus:ring-secondary outline-none bg-white text-base"
                     value={selectedTeamId}
                     onChange={(e) => {
                       setSelectedTeamId(e.target.value);
                       setIsConfirmed(false);
                     }}
                   >
-                    <option value="">-- Vyber tým --</option>
+                    <option value="">---&nbsp;&nbsp;Vyber svůj tým&nbsp;&nbsp;---</option>
                     {teamsList.map((team) => (
                       <option key={team.id} value={team.id}>
                         {team.team_name} {team.category ? `(${team.category})` : ""}
@@ -248,8 +248,8 @@ export default function RegisterPage() {
                   </select>
 
                   {currentSelectedTeam && (
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-center animate-in fade-in duration-200">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    <div className="bg-secondary/20 p-4 rounded-xl border border-secondary space-y-2 text-center animate-in fade-in duration-200">
+                      <p className="text-xs font-bold text-secondary uppercase tracking-wider">
                         Členové týmu
                       </p>
                       <div className="flex flex-wrap justify-center gap-1.5">

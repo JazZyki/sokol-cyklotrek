@@ -36,6 +36,14 @@ interface PoiPoint {
   quiz_data?: QuizQuestion | QuizQuestion[] | string; // JSON column from Supabase
 }
 
+interface TeamTrackingRecord {
+  lat_val: number;
+  lon_val: number;
+  distance_from_route: number;
+  session_id: string;
+  created_at: string;
+}
+
 export default function MapPage() {
   const { 
     isTracking, 
@@ -130,7 +138,7 @@ export default function MapPage() {
         if (segments.length === 0) {
           console.log("🛰️ Stahuji historii z team_tracking...");
           
-          let allHistory: any[] = [];
+          let allHistory: TeamTrackingRecord[] = [];
           let from = 0;
           const step = 1000;
           let hasMore = true;
@@ -344,10 +352,10 @@ export default function MapPage() {
 
         <Button
           onClick={handleToggleTracking}
-          variant={isTracking ? "destructive" : "default"}
+          variant={isTracking ? "secondary" : "default"}
           className="px-6 h-10 rounded-full font-bold shadow-md uppercase text-xs"
         >
-          {isTracking ? "Pauza" : "Pokračovat"}
+          {isTracking ? "Pauza" : "Zahájit sledování"}
         </Button>
       </div>
       

@@ -85,3 +85,122 @@
     border-radius: 50%;
   }
 }
+
+.loader {
+  background: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 0 0 -5rem;
+}
+.loader .full-height-svg {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.loader .center {
+  width: 100%;
+  display: flex !important;
+  justify-content: center !important;
+  flex-direction: column !important;
+}
+.loader .center #svg,
+.loader svg {
+  width: 100%;
+  height: auto;
+  margin: auto;
+  transform: none;
+}
+.loader .cls-1 {
+  fill: #e40521;
+}
+.loader .cls-10,
+.loader .cls-2,
+.loader .cls-3,
+.loader .cls-4 {
+  fill: none;
+}
+.loader .cls-2,
+.loader .cls-3 {
+  stroke-width: 3px;
+}
+.loader .cls-2 {
+  stroke-miterlimit: 10;
+  stroke: #333;
+}
+.dark .loader .cls-2 {
+  stroke: #cbd5e1;
+}
+.loader .cls-3 {
+  stroke: #2d2e88;
+  stroke-dasharray: 50 50 180;
+}
+.dark .loader .cls-3 {
+  stroke: #818cf8;
+}
+.loader .cls-10,
+.loader .cls-3,
+.loader .cls-4 {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.loader .cls-4 {
+  stroke: #2d2e88;
+}
+.dark .loader .cls-4 {
+  stroke: #818cf8;
+}
+.loader .cls-10,
+.loader .cls-4 {
+  stroke-width: 4px;
+}
+.loader .cls-10 {
+  stroke: #e40521;
+}
+.loader #animateThis {
+  stroke-dasharray: 50 1000;
+}
+.loader #animateThis2 {
+  stroke-dasharray: 50 1000;
+}
+.loader #effects2,
+.loader #effects4,
+.loader #effects6,
+.loader #effects8,
+.loader #effects10 {
+  stroke: #bff1ff;
+  stroke-dasharray: 10 1000;
+  animation: stroke1 1s infinite;
+}
+.loader #effects1,
+.loader #effects3,
+.loader #effects5,
+.loader #effects7,
+.loader #effects9 {
+  stroke-dasharray: 10 1000;
+  animation: stroke2 0.7s infinite;
+}
+
+@keyframes stroke1 {
+  from {
+    stroke-dasharray: 0 1000;
+    opacity: 1;
+  }
+  to {
+    stroke-dasharray: 100 1000;
+    opacity: 0;
+  }
+}
+@keyframes stroke2 {
+  from {
+    stroke-dasharray: 0 1000;
+    opacity: 1;
+  }
+  to {
+    stroke-dasharray: 50 1000;
+    opacity: 0;
+  }
+}

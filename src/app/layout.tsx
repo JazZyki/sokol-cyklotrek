@@ -12,8 +12,8 @@ const WorkSans = Work_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Nový Knín Trek",
-  description: "Sledování trasy pro 50km trek",
+  title: "Sokol Cyklotrek 2026",
+  description: "Orientační závod Sokol Cyklotrek 2026",
   manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",

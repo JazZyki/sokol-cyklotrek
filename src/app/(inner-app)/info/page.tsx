@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Map as MapIcon, FileText } from "lucide-react";
+import { BookOpen, Map as MapIcon, FileText, Route } from "lucide-react";
 
 export default function InfoPage() {
   const router = useRouter();
@@ -20,18 +20,18 @@ export default function InfoPage() {
         </h1>
         
         <div className="prose prose-slate">
-          <p>Vítejte v aplikaci PoKraji, kterou pro Vás připravil Sokol Nový Knín. Zde jsou základní pravidla:</p>
+          <p>Vítejte v aplikaci Sokol Cyklotrek, kterou pro Vás připravil Sokol Nový Knín. Zde jsou základní pravidla:</p>
           <ul>
-            <li>sledujte tmavě modrou trasu na mapě. To je reálná hranice Nového Knína. Trasu, kterou bude potřeba sledovat, nahrajeme po absolvování úvodního výletu, který se koná 2.-3. května.</li>
-            <li>procházejte červené body (POI) pro jejich odemknutí. Citlivost POI je nastavena na 20 m.</li>
-            <li>Pokud se budete oddalovat od vytyčené trasy, čára, která sleduje vaši trasu zoranžoví</li>
-            <li>Pokud budete mimo trasu, aplikace Vás upozorní tím, že čára sledující vaši trasu zčervená</li>
-            <li>Pauzy si můžete dělat libovolně, důležité je co nejpresnější kopírování vyznačené, tmavomodré, trasy.</li>
-            <li>Po odemčení každého POI je možné si tapem na bod, nebo v sekci &quot;Moje statistiky&quot;, zobrazit zajímavosti o daném bodě a malý kvíz. Není ale určitě potřeba kvíz vyplňovat ihned. Dejte si čas a vyplňte jej až tehdy, kdy budete znát odpovědi.</li>
-            <li>Aplikace je potřeba, aby běžela sama. V průběhu trasování doporučujeme nepřepínat v telefonu na jiné aplikace. Pokud k tomu dojde, začne se aplikace samovolně uspávat a tím pádem přestane trackovat pozici.</li>
-            <li>Doporučujeme mít k dispozici i jinou trasovací aplikaci, která poběží paralelně (nebo i u jiného člena týmu). Následně je možné do účtu týmu importovat data z této aplikace. V případě komplikací nepřijdete o svou trasu.</li>
-            <li>Do chatu můžete psát poznámky k jednotlivým úsekům (např. že na poli je bláto a doporučujete jej obejít), nebo můžete vkládat obrázky / fotit. Ale pamatujte, že vše uvidí všichni uživatelé.</li>
-            <li>Na delší úseky doporučujeme přibalit powerbanku :-)</li>
+            <li>Aplikaci je možné používat <strong>pouze v terénu</strong>.</li>
+            <li>Aplikace vyžaduje <strong>povolení přístupu k poloze</strong>.</li>
+            <li>Pro správnou funkčnost je potřeba mít <strong>zapnutou GPS a mobilní data</strong>.</li>
+            <li>Na startu jste dostali mapu se základními informacemi k jednotlivým bodům.</li>
+            <li>Jednotlivé body (POI) odemykáte <strong>přiblížením se k nim. Citlivost POI je nastavena na 10 m.</strong> Po odemčení POI se daný bod zobrazí na mapě.</li>
+            <li>Sledování GPS se zapíná tlačítkem &laquo;Zahájit sledování&raquo;. Vypnout je možné stiskem tlačítka &laquo;Pauza&raquo;.</li>
+            <li>V aplikaci je možné sledovat ujetou trasu. V tomto případě je potřeba zapnout sledování trasy (ikona <Route className="inline-block size-4 align-middle text-secondary" />).</li>
+            <li>V případě, že máte sledování zapnuté, aplikace je nastavena tak, aby se telefon nevypnul. Je ale nutné, aby aplikace běžela na popředí a <strong>nebyla překryta jinou aplikací</strong> (SMS, telefon, WhatsApp, ...). Pokud k tomuto dojde, je potřeba trasování ukončit. Aplikaci vypnout a znovu zapnout. Pak je možné opět bez problémů sledovat trasu.</li>
+            <li>Pokud trasování nebudete chtít zapnout, je možné telefon &laquo;vypnout&raquo;, dát do kapsy a <strong>trasování zapnout pouze, když se budete blížit k bodu.</strong></li>
+            <li>U určitých POI může být slabý signál a nemusí se správně zobrazovat GPS poloha. Aplikaci by mělo stačit <strong>vypnout a znovu zapnout</strong>. Pak by se GPS poloha měla zobrazit již správně. Pokud by stále nefungovalo správné zobrazení GPS polohy, stačí dopsat <strong>kontrolní kód dané POI do průkazky na kontroly</strong>, kterou jste dostali na startu.</li>
           </ul>
         </div>
 

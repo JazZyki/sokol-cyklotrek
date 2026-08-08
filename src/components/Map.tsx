@@ -57,6 +57,7 @@ interface MapProps {
   onPoiClick?: (poi: PoiPoint) => void;
   isTracking?: boolean;
   showRoute?: boolean;
+  showTrackHistory?: boolean;
 }
 
 interface TrackPoint {
@@ -79,6 +80,7 @@ export default function Map({
   unlockedIds = new Set(),
   onPoiClick = () => {},
   showRoute = false,
+  showTrackHistory = true,
 }: MapProps) {
   const apiKey = process.env.NEXT_PUBLIC_MAPY_API_KEY;
   // Startujeme na 0, aby první načtení location nespustilo autofocus
@@ -147,24 +149,26 @@ export default function Map({
           <Polyline positions={routeCoordinates} pathOptions={{ color: "#2d2e88", weight: 8, opacity: 0.8 }} />
         )}
 
-        {/* POI body */}
-        {poiPoints?.map((poi) => (
-          <Circle
-            key={poi.id}
-            center={[poi.lat, poi.lon]}
-            radius={15}
-            pathOptions={{
-              color: unlockedIds?.has(poi.id) ? "#16a34a" : "#e40521",
-              fillColor: unlockedIds?.has(poi.id) ? "#16a34a" : "#e40521",
-              fillOpacity: 0.3,
-              weight: 2,
-            }}
-            eventHandlers={{ click: () => onPoiClick(poi) }}
-          />
-        ))}
+        {/* POI body - zobrazují se pouze projeté (odemčené) body */}
+        {poiPoints
+          ?.filter((poi) => unlockedIds?.has(String(poi.id)))
+          .map((poi) => (
+            <Circle
+              key={poi.id}
+              center={[poi.lat, poi.lon]}
+              radius={10}
+              pathOptions={{
+                color: "#16a34a",
+                fillColor: "#16a34a",
+                fillOpacity: 0.3,
+                weight: 2,
+              }}
+              eventHandlers={{ click: () => onPoiClick(poi) }}
+            />
+          ))}
 
-        {/* Historie trasy - optimalizovaná verze */}
-        {coloredLines.map((line, idx) => (
+        {/* Historie trasy - zobrazuje se pouze pokud je zapnuté vykreslování trasy */}
+        {showTrackHistory && coloredLines.map((line, idx) => (
           <Polyline
             key={`track-line-${idx}`}
             positions={line.positions}

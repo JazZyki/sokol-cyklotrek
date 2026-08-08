@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SokolLoader } from "@/components/SokolLoader";
 import { PoiModal } from "@/components/PoiModal";
 import { useRouter } from "next/navigation";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Route } from "lucide-react";
 import { useTracking, TrackPoint } from "@/lib/TrackingContext";
 import { calculateDistance } from "@/lib/utils";
 
@@ -62,6 +62,23 @@ export default function MapPage() {
   const router = useRouter();
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showRoute, setShowRoute] = useState(false);
+  const [showTrackHistory, setShowTrackHistory] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("knin_show_track_history");
+      return saved !== null ? saved === "true" : true;
+    }
+    return true;
+  });
+
+  const toggleTrackHistory = () => {
+    setShowTrackHistory((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("knin_show_track_history", String(next));
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     // Najdeme elementy podle ID nebo tagů (v layoutu je musíme označit)
@@ -294,7 +311,7 @@ export default function MapPage() {
 
         const distToPoi = calculateDistance(lat, lon, poi.lat, poi.lon) * 1000;
 
-        if (distToPoi <= 30) {
+        if (distToPoi <= 20) {
           const teamId = localStorage.getItem("knin_team_id");
           if (teamId) {
             const { error } = await supabase
@@ -362,7 +379,16 @@ export default function MapPage() {
       {/* Map Container */}
       <div className={`grow relative bg-slate-200 transition-all duration-300 ${isFullScreen ? 'fixed inset-0 z-1001' : ''}`}>
         <div className="flex gap-2 absolute top-5 right-5 z-1000 bg-white p-2 rounded-full shadow-md">
-           <Button
+          <Button
+            onClick={toggleTrackHistory}
+            variant={showTrackHistory ? "default" : "outline"}
+            size="icon"
+            className="rounded-full size-8"
+            title={showTrackHistory ? "Skrýt trasu" : "Zobrazit trasu"}
+          >
+            <Route className="size-4" />
+          </Button>
+          <Button
             onClick={() => setIsFullScreen(!isFullScreen)}
             variant="outline"
             size="icon"
@@ -391,6 +417,7 @@ export default function MapPage() {
           onPoiClick={(poi) => setSelectedPoi(poi)}
           isTracking={isTracking}
           showRoute={showRoute}
+          showTrackHistory={showTrackHistory}
         />
       </div>
     </main>

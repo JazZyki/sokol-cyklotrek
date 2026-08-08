@@ -123,9 +123,28 @@ export const TrackingProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             setSegments((prev) => {
               if (prev.length === 0) return [{ points: [newPointBase] }];
               const lastIdx = prev.length - 1;
+              const lastSeg = prev[lastIdx];
+
+              let isNewSegNeeded = false;
+              if (lastSeg.points.length > 0) {
+                const lastPt = lastSeg.points[lastSeg.points.length - 1];
+                const jumpDist = calculateDistance(lastPt.coords[0], lastPt.coords[1], latitude, longitude);
+                const jumpTime = lastPt.created_at
+                  ? (new Date().getTime() - new Date(lastPt.created_at).getTime()) / 1000
+                  : 0;
+                // Pokud je bod vzdálen více než 0.5 km nebo uteče více než 10 minut, vytvoříme nový segment
+                if (jumpDist > 0.5 || jumpTime > 600) {
+                  isNewSegNeeded = true;
+                }
+              }
+
+              if (isNewSegNeeded) {
+                return [...prev, { points: [newPointBase] }];
+              }
+
               const updatedLastSegment = {
-                ...prev[lastIdx],
-                points: [...prev[lastIdx].points, newPointBase],
+                ...lastSeg,
+                points: [...lastSeg.points, newPointBase],
               };
               const newSegments = [...prev];
               newSegments[lastIdx] = updatedLastSegment;

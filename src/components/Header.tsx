@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -14,8 +14,12 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  Clock,
+  Hourglass,
+  Trophy,
 } from "lucide-react";
 import { useTracking, ActiveModal } from "@/lib/TrackingContext";
+import { supabase } from "@/lib/supabase";
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
@@ -23,11 +27,94 @@ export default function Header() {
   const { theme, setTheme } = useTheme();
   const { setActiveModal, activeModal } = useTracking();
 
+  const [now, setNow] = useState<Date>(new Date());
+  const [unlockedCount, setUnlockedCount] = useState<number>(0);
+  const [massStart, setMassStart] = useState<string>("10:00");
+
+  useEffect(() => {
+    // 1. Stáhnout globální čas startu ze Supabase DB
+    const fetchGlobalStart = async () => {
+      try {
+        const { data } = await supabase
+          .from("poi_points")
+          .select("title")
+          .eq("name", "RACE_SETTINGS_MASS_START")
+          .single();
+        if (data?.title) {
+          setMassStart(data.title);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("knin_mass_start_time", data.title);
+          }
+        }
+      } catch (e) {}
+    };
+    fetchGlobalStart();
+
+    const updateStats = async () => {
+      setNow(new Date());
+      if (typeof window !== "undefined") {
+        const teamId = localStorage.getItem("knin_team_id");
+        if (teamId) {
+          try {
+            const { data: progressData } = await supabase
+              .from("team_poi_progress")
+              .select("poi_id")
+              .eq("team_id", teamId);
+
+            if (progressData) {
+              setUnlockedCount(progressData.length);
+              localStorage.setItem("knin_unlocked_pois", JSON.stringify(progressData.map(p => String(p.poi_id))));
+            }
+          } catch (e) {}
+        } else {
+          const savedPois = localStorage.getItem("knin_unlocked_pois");
+          if (savedPois) {
+            try {
+              const arr = JSON.parse(savedPois);
+              setUnlockedCount(arr.length);
+            } catch (e) {}
+          }
+        }
+
+        const savedStart = localStorage.getItem("knin_mass_start_time");
+        if (savedStart) setMassStart(savedStart);
+      }
+    };
+
+    updateStats();
+    const interval = setInterval(updateStats, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getRemainingTimeData = () => {
+    const parts = massStart.split(":").map(Number);
+    const startHour = isNaN(parts[0]) ? 10 : parts[0];
+    const startMin = isNaN(parts[1]) ? 0 : parts[1];
+
+    const limitDate = new Date(now);
+    limitDate.setHours(startHour + 7, startMin, 0, 0);
+
+    const diffMs = limitDate.getTime() - now.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+
+    if (diffSec > 0) {
+      const h = Math.floor(diffSec / 3600);
+      const m = Math.floor((diffSec % 3600) / 60);
+      return { text: `Zbývá ${h}h ${m}m`, isOver: false };
+    } else {
+      const overSec = Math.abs(diffSec);
+      const m = Math.ceil(overSec / 60);
+      return { text: `+${m}m přes limit`, isOver: true };
+    }
+  };
+
+  const remainingInfo = getRemainingTimeData();
+
   interface NavItem {
     name: string;
     href: string;
     modal: ActiveModal | undefined;
-    icon: any;
+    icon: typeof MapIcon;
   }
 
   const navItems: NavItem[] = [
@@ -58,14 +145,15 @@ export default function Header() {
   };
 
   return (
-    <>
-      <header className="w-full h-18 bg-background border-b-4 border-secondary px-4 flex justify-between items-center z-1001 relative shadow-md">
+    <div className="w-full flex flex-col">
+      {/* 1. HLAVNÍ HLAVIČKA (Pouze Logo vlevo + Tlačítko Menu vpravo) */}
+      <header className="w-full h-16 bg-background border-b-2 border-secondary px-4 flex items-center justify-between relative shadow-sm z-30">
         <Image
           src="/cyklotrek_logo.png"
-          alt="Logo"
+          alt="Sokol Cyklotrek Logo"
           width={140}
           height={60}
-          className="h-10 w-auto cursor-pointer"
+          className="h-10 w-auto cursor-pointer object-contain"
           onClick={() => {
             setActiveModal(null);
             router.push("/mapa");
@@ -74,11 +162,28 @@ export default function Header() {
 
         <button
           onClick={() => setIsOpen(true)}
-          className="relative p-2 text-menu-btn hover:bg-slate-100 rounded-xl transition-colors"
+          className="p-2 text-menu-btn hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+          aria-label="Otevřít menu"
         >
           <Menu className="size-7" />
         </button>
       </header>
+
+      {/* 2. STATISTIKY LIŠTA (Samostatný řádek POD hlavní hlavičkou) */}
+      <div className="w-full bg-slate-100 text-slate-800 px-4 py-1.5 flex items-center justify-between text-[11px] sm:text-xs font-mono font-bold shadow-inner relative z-20">
+        <div className="flex items-center gap-1.5 text-amber-600">
+          <Clock className="size-3.5" />
+          <span>{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div className={`flex items-center gap-1.5 ${remainingInfo.isOver ? 'text-red-500 font-extrabold animate-pulse' : 'text-emerald-500'}`}>
+          <Hourglass className="size-3.5" />
+          <span>{remainingInfo.text}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-sky-600">
+          <Trophy className="size-3.5" />
+          <span>{unlockedCount} / 24 POI</span>
+        </div>
+      </div>
 
       {/* --- OFF-CANVAS MENU OVERLAY --- */}
       <div
@@ -176,6 +281,6 @@ export default function Header() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

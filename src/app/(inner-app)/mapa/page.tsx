@@ -285,6 +285,9 @@ export default function MapPage() {
           }
 
           setUnlockedIds(ids);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("knin_unlocked_pois", JSON.stringify(Array.from(ids)));
+          }
           console.log("🔓 Odemčené body:", ids.size);
         }
 
@@ -311,7 +314,7 @@ export default function MapPage() {
 
         const distToPoi = calculateDistance(lat, lon, poi.lat, poi.lon) * 1000;
 
-        if (distToPoi <= 20) {
+        if (distToPoi <= 10) {
           const teamId = localStorage.getItem("knin_team_id");
           if (teamId) {
             const { error } = await supabase
@@ -319,7 +322,13 @@ export default function MapPage() {
               .insert({ team_id: teamId, poi_id: poi.id });
 
             if (!error || (error && "code" in error && error.code === "23505")) {
-              setUnlockedIds((prev) => new Set([...prev, String(poi.id)]));
+              setUnlockedIds((prev) => {
+                const next = new Set([...prev, String(poi.id)]);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("knin_unlocked_pois", JSON.stringify(Array.from(next)));
+                }
+                return next;
+              });
               setDebugMsg(`🌟 BOD ODEMČEN: ${poi.name}`);
               
               // Haptická odezva: dvě krátká zavibrování
@@ -354,8 +363,8 @@ export default function MapPage() {
   return (
     <main className="h-screen w-full flex flex-col overflow-hidden">
       {/* Info bar */}
-      <div className="flex justify-between items-center bg-background p-3 border-t-2 border-secondary shadow-inner">
-        <div className="flex gap-4 sm:gap-8">
+      <div className="flex justify-between items-center absolute bottom-20 p-3 z-1000">
+        <div className="hidden flex gap-4 sm:gap-8">
           {/* Čas */}
           <div className="flex flex-col">
             <span className="text-[10px] font-bold text-def-text uppercase leading-none mb-1">

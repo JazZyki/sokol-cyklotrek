@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
   Table, 
@@ -20,9 +20,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SokolLoader } from "@/components/SokolLoader";
-import { MapPin, Users, Clock, TrendingUp, Trophy, Trash2, Upload, Route } from "lucide-react";
+import { MapPin, Users, Clock, TrendingUp, Trophy, Trash2, Upload, Route, Zap } from "lucide-react";
 import { calculateDistance } from "@/lib/utils";
 import gpxParser from "gpxparser";
+
+import { calculateScoreForTeam, calculatePenaltyPoints, POI_CATALOG } from "@/lib/poiScoring";
 
 // Definice surových dat z DB
 interface TeamRaw {
@@ -42,14 +44,23 @@ interface TeamStats {
   timeSeconds: number;
   visitedPois: number;
   totalPois: number;
+  basePoints: number;
+  completedGroups: string[];
+  bonusPoints: number;
+  penaltyPoints: number;
+  overtimeMinutes: number;
+  totalPoints: number;
+  finishTime: string;
+  calculatedDurationSeconds: number;
   lastPing: string | null;
+  overallRank: number;
+  categoryRank: number;
 }
 
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<TeamStats[]>([]);
   const poiFileInputRef = useRef<HTMLInputElement>(null);
 
 
@@ -130,8 +141,8 @@ export default function AdminPage() {
             title: wpt.name || `Bod ${idx + 1}`,
             lat: wpt.lat,
             lon: wpt.lon,
-            history_text: wpt.desc || (wpt as any).cmt || "Navštívený bod.",
-            radius_reach: 30,
+            history_text: wpt.desc || (wpt as any).cmt || "",
+            radius_reach: 10,
           }));
         } else if (gpx.tracks && gpx.tracks.length > 0) {
           const trackPoints = gpx.tracks[0].points;
@@ -140,8 +151,8 @@ export default function AdminPage() {
             title: `Bod ${idx + 1}`,
             lat: pt.lat,
             lon: pt.lon,
-            history_text: "Navštívený bod trasy.",
-            radius_reach: 30,
+            history_text: "",
+            radius_reach: 10,
           }));
         }
 
@@ -229,6 +240,66 @@ export default function AdminPage() {
     }
   }, []);
 
+  const [massStartTime, setMassStartTime] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("knin_mass_start_time") || "09:00";
+    }
+    return "09:00";
+  });
+
+  const [finishTimes, setFinishTimes] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("knin_finish_times");
+      return saved ? JSON.parse(saved) : {};
+    }
+    return {};
+  });
+
+  const handleMassStartChange = async (val: string) => {
+    setMassStartTime(val);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("knin_mass_start_time", val);
+    }
+    try {
+      await supabase.from("poi_points").upsert({
+        id: "00000000-0000-0000-0000-000000000000",
+        name: "RACE_SETTINGS_MASS_START",
+        title: val,
+        lat: 0,
+        lon: 0,
+        radius_reach: 0
+      });
+    } catch (e) {
+      console.error("Error syncing mass start time to Supabase:", e);
+    }
+  };
+
+  const handleFinishTimeChange = (teamId: string, val: string) => {
+    const next = { ...finishTimes, [teamId]: val };
+    setFinishTimes(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("knin_finish_times", JSON.stringify(next));
+    }
+  };
+
+  const parseTimeToSeconds = (timeStr: string): number | null => {
+    if (!timeStr || !timeStr.trim()) return null;
+    const parts = timeStr.trim().split(":").map(Number);
+    if (parts.some(isNaN)) return null;
+    if (parts.length === 2) {
+      return parts[0] * 3600 + parts[1] * 60;
+    }
+    if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return null;
+  };
+
+  const [rawTeams, setRawTeams] = useState<TeamRaw[]>([]);
+  const [rawPoiProgress, setRawPoiProgress] = useState<any[]>([]);
+  const [rawDbPois, setRawDbPois] = useState<any[]>([]);
+  const [rawTracking, setRawTracking] = useState<any[]>([]);
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchAdminData();
@@ -245,14 +316,24 @@ export default function AdminPage() {
       
       if (teamsError) throw teamsError;
 
-      // 2. Fetch POI progress and total POI count
+      // 2. Fetch POI progress and all POI records
       const { data: poiProgressData } = await supabase
         .from("team_poi_progress")
         .select("team_id, poi_id");
 
-      const { count: totalPoiCount } = await supabase
+      const { data: dbPoisRaw } = await supabase
         .from("poi_points")
-        .select("id", { count: "exact", head: true });
+        .select("id, name, title, lat");
+
+      const systemSetting = (dbPoisRaw || []).find(p => p.name === "RACE_SETTINGS_MASS_START");
+      if (systemSetting?.title) {
+        setMassStartTime(systemSetting.title);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("knin_mass_start_time", systemSetting.title);
+        }
+      }
+
+      const dbPoisData = (dbPoisRaw || []).filter(p => p.name !== "RACE_SETTINGS_MASS_START" && p.lat !== 0);
 
       // 3. Fetch Tracking data for all teams (PAGINATED)
       let allTrackingData: any[] = [];
@@ -283,52 +364,109 @@ export default function AdminPage() {
         }
       }
 
-      // Agregace dat
-      const stats: TeamStats[] = (teamsData as TeamRaw[]).map(team => {
-        const teamPings = allTrackingData.filter(p => p.team_id === team.id);
-        const visitedPois = (poiProgressData || []).filter(p => p.team_id === team.id).length;
-        
-        let timeSeconds = 0;
-        let lastPing = null;
-
-        if (teamPings.length > 0) {
-          lastPing = teamPings[teamPings.length - 1].created_at;
-          
-          const sessions: Record<string, any[]> = {};
-          teamPings.forEach(ping => {
-            const sId = ping.session_id || "default";
-            if (!sessions[sId]) sessions[sId] = [];
-            sessions[sId].push(ping);
-          });
-
-          Object.values(sessions).forEach(pings => {
-            if (pings.length > 1) {
-              const start = new Date(pings[0].created_at).getTime();
-              const end = new Date(pings[pings.length - 1].created_at).getTime();
-              timeSeconds += (end - start) / 1000;
-            }
-          });
-        }
-
-        return {
-          teamId: team.id,
-          name: team.team_name,
-          category: team.category || "Hobíci",
-          members: team.members,
-          timeSeconds,
-          visitedPois,
-          totalPois: totalPoiCount || 0,
-          lastPing
-        };
-      });
-
-      setData(stats.sort((a, b) => b.visitedPois - a.visitedPois || a.timeSeconds - b.timeSeconds));
+      setRawTeams(teamsData as TeamRaw[] || []);
+      setRawPoiProgress(poiProgressData || []);
+      setRawDbPois(dbPoisData || []);
+      setRawTracking(allTrackingData || []);
     } catch (err) {
       console.error("Admin data fetch error:", err);
     } finally {
       setLoading(false);
     }
   };
+
+  // Výpočet statistik a výsledkové listiny v paměti bez načítacího přeblikávání
+  const data = useMemo<TeamStats[]>(() => {
+    if (!rawTeams || rawTeams.length === 0) return [];
+    const totalPoiCount = rawDbPois.length > 0 ? rawDbPois.length : 24;
+
+    const stats: TeamStats[] = rawTeams.map(team => {
+      const teamPings = rawTracking.filter(p => p.team_id === team.id);
+      const teamVisitedProgress = rawPoiProgress.filter(p => p.team_id === team.id);
+      const visitedPoiIds = teamVisitedProgress.map(p => String(p.poi_id));
+
+      // Výpočet bodů a skupinových prémií
+      const scoreResult = calculateScoreForTeam(visitedPoiIds, rawDbPois);
+      
+      let timeSeconds = 0;
+      let lastPing = null;
+
+      if (teamPings.length > 0) {
+        lastPing = teamPings[teamPings.length - 1].created_at;
+        
+        const sessions: Record<string, any[]> = {};
+        teamPings.forEach(ping => {
+          const sId = ping.session_id || "default";
+          if (!sessions[sId]) sessions[sId] = [];
+          sessions[sId].push(ping);
+        });
+
+        Object.values(sessions).forEach(pings => {
+          if (pings.length > 1) {
+            const start = new Date(pings[0].created_at).getTime();
+            const end = new Date(pings[pings.length - 1].created_at).getTime();
+            timeSeconds += (end - start) / 1000;
+          }
+        });
+      }
+
+      // Výpočet celkové doby dle hromadného startu a času dojezdu
+      const fTime = finishTimes[team.id] || "";
+      const mStartSec = parseTimeToSeconds(massStartTime);
+      const fSec = parseTimeToSeconds(fTime);
+
+      let calculatedDurationSeconds = timeSeconds;
+      if (mStartSec !== null && fSec !== null) {
+        let diff = fSec - mStartSec;
+        if (diff < 0) diff += 24 * 3600;
+        calculatedDurationSeconds = diff;
+      }
+
+      // Výpočet penalizace za překročení 7hodinového limitu (1b za každých i započatých 10 min)
+      const penaltyInfo = calculatePenaltyPoints(calculatedDurationSeconds, 7);
+      const netTotalPoints = Math.max(0, scoreResult.basePoints + scoreResult.bonusPoints - penaltyInfo.penaltyPoints);
+
+      return {
+        teamId: team.id,
+        name: team.team_name,
+        category: team.category || "Hobíci",
+        members: team.members,
+        timeSeconds,
+        visitedPois: scoreResult.visitedCount,
+        totalPois: totalPoiCount,
+        basePoints: scoreResult.basePoints,
+        completedGroups: scoreResult.completedGroups,
+        bonusPoints: scoreResult.bonusPoints,
+        penaltyPoints: penaltyInfo.penaltyPoints,
+        overtimeMinutes: penaltyInfo.overtimeMinutes,
+        totalPoints: netTotalPoints,
+        finishTime: fTime,
+        calculatedDurationSeconds,
+        lastPing,
+        overallRank: 0,
+        categoryRank: 0
+      };
+    });
+
+    // 1. Řazení všech týmů
+    const sorted = stats.sort((a, b) => 
+      b.totalPoints - a.totalPoints || 
+      b.visitedPois - a.visitedPois || 
+      (a.calculatedDurationSeconds || Infinity) - (b.calculatedDurationSeconds || Infinity)
+    );
+
+    // 2. Výpočet pořadí v rámci celé soutěže i v rámci jednotlivých kategorií (Hobíci, Profíci, Elektrokola)
+    const categoryRanks: Record<string, number> = {};
+    sorted.forEach((team, idx) => {
+      team.overallRank = idx + 1;
+      categoryRanks[team.category] = (categoryRanks[team.category] || 0) + 1;
+      team.categoryRank = categoryRanks[team.category];
+    });
+
+    return sorted;
+  }, [rawTeams, rawPoiProgress, rawDbPois, rawTracking, massStartTime, finishTimes]);
+
+  const [selectedCategoryTab, setSelectedCategoryTab] = useState<string>("Všechny");
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -476,74 +614,175 @@ export default function AdminPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Leaderboard & Statistiky</CardTitle>
-            <CardDescription>Aktuální pořadí podle ušlé vzdálenosti</CardDescription>
+        {/* Nastavení Hromadného Startu */}
+        <Card className="border-secondary/30 bg-secondary/5">
+          <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
+            <div>
+              <CardTitle className="text-xl font-bold text-secondary flex items-center gap-2">
+                <Clock className="size-5 text-primary" /> Hromadný start & Časový limit (7 hod.)
+              </CardTitle>
+              <CardDescription>
+                Při překročení 7hodinového limitu dostává tým penalizaci <strong>-1 bod za každých i započatých 10 minut</strong> navíc.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+              <label className="text-xs font-bold text-slate-600 uppercase">Čas startu:</label>
+              <Input
+                type="text"
+                placeholder="10:00"
+                value={massStartTime}
+                onChange={(e) => handleMassStartChange(e.target.value)}
+                className="w-28 font-mono font-bold text-base h-9 text-center"
+              />
+            </div>
           </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="h-64 flex items-center justify-center">
-                <SokolLoader />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[180px]">Tým</TableHead>
-                      <TableHead>Kategorie</TableHead>
-                      <TableHead>Členové</TableHead>
-                      <TableHead className="text-right">Čas</TableHead>
-                      <TableHead className="text-right">Projeté body</TableHead>
-                      <TableHead className="text-right">Poslední ping</TableHead>
-                      <TableHead className="text-right">Akce</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.map((team) => {
-                      const lastPingDate = team.lastPing ? new Date(team.lastPing) : null;
-                      
-                      return (
-                        <TableRow key={team.teamId}>
-                          <TableCell className="font-bold">{team.name}</TableCell>
-                          <TableCell>
-                            <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                              {team.category}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-slate-500 text-xs">
-                            {team.members.join(", ")}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-bold">
-                            {formatTime(team.timeSeconds)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-bold text-primary">
-                            {team.visitedPois} / {team.totalPois}
-                          </TableCell>
-
-                           <TableCell className="text-right text-xs text-slate-400">
-                            {lastPingDate ? lastPingDate.toLocaleTimeString() : "nikdy"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50 size-8 rounded-full"
-                              onClick={() => handleDeleteTeam(team.teamId, team.name)}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
         </Card>
+
+        {/* Oddělené Výsledkové listiny pro jednotlivé kategorie */}
+        {loading ? (
+          <Card>
+            <CardContent className="h-64 flex items-center justify-center">
+              <SokolLoader />
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-8">
+            {["Hobíci", "Profíci", "Elektrokola"].map((catName) => {
+              const categoryTeams = data.filter((t) => t.category === catName);
+              
+              let catIcon = <Trophy className="size-6 text-amber-500" />;
+              if (catName === "Hobíci") catIcon = <Users className="size-6 text-blue-500" />;
+              if (catName === "Profíci") catIcon = <Trophy className="size-6 text-amber-500" />;
+              if (catName === "Elektrokola") catIcon = <Zap className="size-6 text-purple-500" />;
+
+              return (
+                <Card key={catName} className="shadow-md border-slate-200 overflow-hidden">
+                  <CardHeader className="flex flex-row items-center justify-between pb-3 bg-slate-100/70 border-b border-slate-200">
+                    <div className="flex items-center gap-3">
+                      {catIcon}
+                      <div>
+                        <CardTitle className="text-xl font-bold text-slate-900">
+                          Výsledková listina: {catName}
+                        </CardTitle>
+                        <CardDescription className="text-xs text-slate-500">
+                          Samostatné pořadí 1.–3. místo pro kategorii {catName}
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-xs font-black bg-primary/10 text-primary border border-primary/20">
+                      {categoryTeams.length} {categoryTeams.length === 1 ? "tým" : categoryTeams.length >= 2 && categoryTeams.length <= 4 ? "týmy" : "týmů"}
+                    </span>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {categoryTeams.length === 0 ? (
+                      <p className="text-center py-8 text-slate-400 text-sm font-medium">
+                        V kategorii {catName} zatím nejsou registrovány žádné týmy.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-slate-50">
+                              <TableHead className="w-[70px] text-center font-bold">Pořadí</TableHead>
+                              <TableHead className="w-[180px]">Tým</TableHead>
+                              <TableHead>Členové</TableHead>
+                              <TableHead className="text-center">Kontroly</TableHead>
+                              <TableHead className="text-right">Zák. body</TableHead>
+                              <TableHead className="text-center">Prémie (+5b / skup.)</TableHead>
+                              <TableHead className="text-center">Penalizace (&gt;7h)</TableHead>
+                              <TableHead className="text-right font-bold text-primary">Celkem bodů</TableHead>
+                              <TableHead className="text-center w-[120px]">Čas dojezdu</TableHead>
+                              <TableHead className="text-right font-bold">Celková doba</TableHead>
+                              <TableHead className="text-right text-xs">Poslední ping</TableHead>
+                              <TableHead className="text-right">Akce</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {categoryTeams.map((team) => {
+                              const lastPingDate = team.lastPing ? new Date(team.lastPing) : null;
+                              const cRank = team.categoryRank;
+                              
+                              let rankBadge = <span className="font-bold text-slate-500 text-xs">#{cRank}</span>;
+                              if (cRank === 1) rankBadge = <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-black text-xs border border-amber-300 shadow-xs" title="1. místo v kategorii">🥇 1.</span>;
+                              if (cRank === 2) rankBadge = <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-800 font-black text-xs border border-slate-300 shadow-xs" title="2. místo v kategorii">🥈 2.</span>;
+                              if (cRank === 3) rankBadge = <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-amber-700/10 text-amber-900 font-black text-xs border border-amber-700/30 shadow-xs" title="3. místo v kategorii">🥉 3.</span>;
+
+                              return (
+                                <TableRow key={team.teamId} className={cRank <= 3 ? "bg-amber-500/5 font-medium" : ""}>
+                                  <TableCell className="text-center font-bold">{rankBadge}</TableCell>
+                                  <TableCell className="font-bold text-slate-900">{team.name}</TableCell>
+                                  <TableCell className="text-slate-500 text-xs max-w-[200px] truncate">
+                                    {team.members.join(", ")}
+                                  </TableCell>
+                                  <TableCell className="text-center font-mono font-bold text-slate-700">
+                                    {team.visitedPois} / {team.totalPois}
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono font-bold text-slate-700">
+                                    {team.basePoints} b
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {team.completedGroups.length > 0 ? (
+                                      <div className="flex flex-wrap justify-center gap-1">
+                                        {team.completedGroups.map((g, gIdx) => (
+                                          <span key={gIdx} className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200" title={g}>
+                                            +5b ({g.split('-')[0].trim()})
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-300 text-xs">–</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {team.penaltyPoints > 0 ? (
+                                      <span className="inline-block px-2 py-0.5 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200" title={`Překročeno o ${team.overtimeMinutes} min`}>
+                                        -{team.penaltyPoints} b ({team.overtimeMinutes}m)
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-300 text-xs">0 b</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono font-black text-lg text-primary">
+                                    {team.totalPoints} b
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Input
+                                      type="text"
+                                      placeholder="14:25:00"
+                                      value={finishTimes[team.teamId] || ""}
+                                      onChange={(e) => handleFinishTimeChange(team.teamId, e.target.value)}
+                                      className="w-24 text-center font-mono font-bold text-xs h-8 mx-auto"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono font-bold text-slate-800">
+                                    {formatTime(team.calculatedDurationSeconds)}
+                                  </TableCell>
+                                  <TableCell className="text-right text-xs text-slate-400">
+                                    {lastPingDate ? lastPingDate.toLocaleTimeString() : "nikdy"}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="text-red-500 hover:text-red-700 hover:bg-red-50 size-8 rounded-full"
+                                      onClick={() => handleDeleteTeam(team.teamId, team.name)}
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

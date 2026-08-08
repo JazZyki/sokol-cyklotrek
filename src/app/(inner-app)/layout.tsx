@@ -15,9 +15,9 @@ export default function InnerAppLayout({ children }: { children: React.ReactNode
   return (
     <TrackingProvider>
       <div className="flex flex-col h-screen overflow-hidden bg-background">
-        <header className="flex-none">
+        <div className="flex-none">
           <Header />
-        </header>
+        </div>
 
         <main className="flex-1 relative overflow-hidden">
           {children}

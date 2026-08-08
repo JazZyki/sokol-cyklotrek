@@ -38,7 +38,7 @@ export default function InfoPage() {
         <Button
           variant="outline"
           size="lgx"
-          onClick={() => window.open("/pokraji-navod.pdf", "_blank")}
+          onClick={() => window.open("/cyklotrek-navod.pdf", "_blank")}
           className="mt-6">
             <FileText className="size-5" /> Stáhnout návod (PDF)
           </Button>

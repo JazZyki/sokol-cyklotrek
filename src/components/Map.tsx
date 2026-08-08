@@ -151,7 +151,7 @@ export default function Map({
 
         {/* POI body - zobrazují se pouze projeté (odemčené) body */}
         {poiPoints
-          ?.filter((poi) => unlockedIds?.has(String(poi.id)))
+          ?.filter((poi) => poi.lat !== 0 && poi.lon !== 0 && unlockedIds?.has(String(poi.id)))
           .map((poi) => (
             <Circle
               key={poi.id}

@@ -252,9 +252,46 @@ export function calculatePenaltyPoints(
   return { overtimeMinutes, penaltyPoints };
 }
 
+export function matchPoiToCatalog(dbPoi: { name?: string; title?: string; description?: string }): PoiDefinition | null {
+  const str = ((dbPoi.name || "") + " " + (dbPoi.title || "") + " " + (dbPoi.description || "")).toLowerCase();
+  
+  if (str.includes("cedule o spolufinancov") || str.includes("pozemkov")) return POI_CATALOG.find(c => c.id === 1) || null;
+  if (str.includes("hubert") || str.includes("rohový k") || str.includes("rohovy k")) return POI_CATALOG.find(c => c.id === 2) || null;
+  if (str.includes("elektrorozvaděč") || str.includes("elektrorozvadec") || str.includes("písmenu r")) return POI_CATALOG.find(c => c.id === 3) || null;
+  if (str.includes("křeničn") || str.includes("krenicn")) return POI_CATALOG.find(c => c.id === 4) || null;
+  if (str.includes("krávy") || str.includes("kravy")) return POI_CATALOG.find(c => c.id === 5) || null;
+  if (str.includes("zona")) return POI_CATALOG.find(c => c.id === 6) || null;
+  if (str.includes("stavidlu") && (str.includes("číslic") || str.includes("cislic") || str.includes("objednávk") || str.includes("objednavk"))) return POI_CATALOG.find(c => c.id === 7) || null;
+  if (str.includes("pluh")) return POI_CATALOG.find(c => c.id === 8) || null;
+  if (str.includes("rozhledna")) return POI_CATALOG.find(c => c.id === 9) || null;
+  if (str.includes("křížovnick") || str.includes("krizovnick") || str.includes("years")) return POI_CATALOG.find(c => c.id === 10) || null;
+  if (str.includes("kontejner") || str.includes("gross")) return POI_CATALOG.find(c => c.id === 11) || null;
+  if (str.includes("dálkově") || str.includes("dalkove")) return POI_CATALOG.find(c => c.id === 12) || null;
+  if (str.includes("dej přednost") || str.includes("dej prednost")) return POI_CATALOG.find(c => c.id === 13) || null;
+  if (str.includes("židovsk") || str.includes("zidovsk") || str.includes("klein")) return POI_CATALOG.find(c => c.id === 14) || null;
+  if (str.includes("sloup") && (str.includes("dat.") || str.includes("dat"))) return POI_CATALOG.find(c => c.id === 15) || null;
+  if (str.includes("sloup") && (str.includes("pomlčka") || str.includes("pomlcka") || str.includes("19 9-7") || str.includes("vyr (z toho"))) return POI_CATALOG.find(c => c.id === 16) || null;
+  if (str.includes("nákladním") || str.includes("nakladnim") || str.includes("8m")) return POI_CATALOG.find(c => c.id === 17) || null;
+  if (str.includes("kytín") || str.includes("kytin") || str.includes("vlastníka komunikace") || str.includes("vlastnika komunikace")) return POI_CATALOG.find(c => c.id === 18) || null;
+  if (str.includes("světlo") || str.includes("svetlo") || str.includes("stromě") || str.includes("strome") || str.includes("kaple") || str.includes("modus")) return POI_CATALOG.find(c => c.id === 19) || null;
+  if (str.includes("království") || str.includes("kralovstvi")) return POI_CATALOG.find(c => c.id === 20) || null;
+  if (str.includes("stavidlu") && (str.includes("šroubech") || str.includes("sroubech") || str.includes("zábradlí") || str.includes("zabradli") || str.includes("sc 8.8"))) return POI_CATALOG.find(c => c.id === 21) || null;
+  if (str.includes("křížku") || str.includes("krizku") || str.includes("naproti")) return POI_CATALOG.find(c => c.id === 22) || null;
+  if (str.includes("kilián") || str.includes("kilian")) return POI_CATALOG.find(c => c.id === 23) || null;
+  if (str.includes("hvozdnice")) return POI_CATALOG.find(c => c.id === 24) || null;
+  
+  // Fallback substring matching
+  const match = POI_CATALOG.find(cat => {
+    const catName = cat.name.toLowerCase();
+    return str.includes(catName.substring(0, 15)) || catName.includes(str.substring(0, 15));
+  });
+
+  return match || null;
+}
+
 export function calculateScoreForTeam(
   visitedPoiIds: string[], 
-  dbPoisList: { id: string; name?: string; title?: string }[]
+  dbPoisList: { id: string; name?: string; title?: string; description?: string }[]
 ): TeamScoreResult {
   const visitedDbPois = dbPoisList.filter(p => visitedPoiIds.includes(String(p.id)));
   
@@ -262,12 +299,7 @@ export function calculateScoreForTeam(
   const visitedCatalogIds = new Set<number>();
 
   visitedDbPois.forEach(dbPoi => {
-    const dbName = (dbPoi.name || dbPoi.title || "").toLowerCase();
-    // Párování podle jména v katalogu
-    const match = POI_CATALOG.find(cat => {
-      const catName = cat.name.toLowerCase();
-      return dbName.includes(catName.substring(0, 15)) || catName.includes(dbName.substring(0, 15));
-    });
+    const match = matchPoiToCatalog(dbPoi);
 
     if (match) {
       basePoints += match.points;

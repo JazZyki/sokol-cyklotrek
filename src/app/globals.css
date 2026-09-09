@@ -204,3 +204,79 @@
     opacity: 0;
   }
 }
+
+/* ==========================================================================
+   TISK VÝSLEDKOVÉ LISTINY (@media print)
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 12mm 12mm 12mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Prvky které se netisknou (tlačítka, filtry, hledání, formuláře) */
+  .no-print,
+  button,
+  input,
+  footer,
+  nav,
+  .hide-on-print {
+    display: none !important;
+  }
+
+  /* Prvky určené pouze pro tisk */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Oddělovač stránek pro tisk celých kategorií */
+  .print-page-break {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  /* Tabulky */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border: 1px solid #94a3b8 !important;
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+  }
+
+  td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+  }
+
+  .print-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin-bottom: 1.5rem !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}

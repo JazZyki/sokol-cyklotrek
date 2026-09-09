@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
   Table, 
@@ -20,11 +20,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SokolLoader } from "@/components/SokolLoader";
-import { MapPin, Users, Clock, TrendingUp, Trophy, Trash2, Upload, Route, Zap } from "lucide-react";
+import { 
+  MapPin, 
+  Users, 
+  Clock, 
+  TrendingUp, 
+  Trophy, 
+  Trash2, 
+  Upload, 
+  Route, 
+  Zap,
+  Eye,
+  ChevronDown,
+  ChevronRight,
+  ListOrdered
+} from "lucide-react";
 import { calculateDistance } from "@/lib/utils";
 import gpxParser from "gpxparser";
 
-import { calculateScoreForTeam, calculatePenaltyPoints, POI_CATALOG } from "@/lib/poiScoring";
+import { 
+  calculateScoreForTeam, 
+  calculatePenaltyPoints, 
+  POI_CATALOG, 
+  matchPoiToCatalog 
+} from "@/lib/poiScoring";
+import { TeamPoiModal, TeamPoiModalData } from "@/components/TeamPoiModal";
+import { AdminVisitedPoi, AdminUnvisitedPoi } from "@/components/AdminTeamMap";
 
 // Definice surových dat z DB
 interface TeamRaw {
@@ -55,6 +76,8 @@ interface TeamStats {
   lastPing: string | null;
   overallRank: number;
   categoryRank: number;
+  visitedPoisList: AdminVisitedPoi[];
+  unvisitedPoisList: AdminUnvisitedPoi[];
 }
 
 export default function AdminPage() {
@@ -62,6 +85,22 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const poiFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [expandedTeamIds, setExpandedTeamIds] = useState<Set<string>>(new Set());
+  const [selectedTeamForModal, setSelectedTeamForModal] = useState<TeamPoiModalData | null>(null);
+  const [officialRouteCoords, setOfficialRouteCoords] = useState<[number, number][]>([]);
+
+  const toggleExpandTeam = (teamId: string) => {
+    setExpandedTeamIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+      }
+      return next;
+    });
+  };
 
 
   const [newTeamName, setNewTeamName] = useState("");
@@ -319,11 +358,12 @@ export default function AdminPage() {
       // 2. Fetch POI progress and all POI records
       const { data: poiProgressData } = await supabase
         .from("team_poi_progress")
-        .select("team_id, poi_id");
+        .select("team_id, poi_id, unlocked_at")
+        .order("unlocked_at", { ascending: true });
 
       const { data: dbPoisRaw } = await supabase
         .from("poi_points")
-        .select("id, name, title, lat");
+        .select("id, name, title, lat, lon, description, history_text");
 
       const systemSetting = (dbPoisRaw || []).find(p => p.name === "RACE_SETTINGS_MASS_START");
       if (systemSetting?.title) {
@@ -334,6 +374,19 @@ export default function AdminPage() {
       }
 
       const dbPoisData = (dbPoisRaw || []).filter(p => p.name !== "RACE_SETTINGS_MASS_START" && p.lat !== 0);
+
+      // Fetch official route if exists
+      const { data: routeData } = await supabase
+        .from("route_display")
+        .select("geojson_data")
+        .maybeSingle();
+
+      if (routeData?.geojson_data) {
+        const coords = (routeData.geojson_data as any).coordinates;
+        if (Array.isArray(coords)) {
+          setOfficialRouteCoords(coords.map(([lon, lat]: [number, number]) => [lat, lon]));
+        }
+      }
 
       // 3. Fetch Tracking data for all teams (PAGINATED)
       let allTrackingData: any[] = [];
@@ -384,6 +437,60 @@ export default function AdminPage() {
       const teamPings = rawTracking.filter(p => p.team_id === team.id);
       const teamVisitedProgress = rawPoiProgress.filter(p => p.team_id === team.id);
       const visitedPoiIds = teamVisitedProgress.map(p => String(p.poi_id));
+
+      // Seřazení projetých kontrolních bodů chronologicky
+      const sortedProgress = [...teamVisitedProgress].sort((a, b) => 
+        new Date(a.unlocked_at || 0).getTime() - new Date(b.unlocked_at || 0).getTime()
+      );
+
+      const visitedPoisList: AdminVisitedPoi[] = sortedProgress.map((prog, idx) => {
+        const dbPoi = rawDbPois.find(p => String(p.id) === String(prog.poi_id));
+        const cat = dbPoi ? matchPoiToCatalog(dbPoi) : null;
+        let formattedTime = "";
+        try {
+          formattedTime = new Date(prog.unlocked_at).toLocaleTimeString("cs-CZ", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+        } catch {
+          formattedTime = prog.unlocked_at || "";
+        }
+
+        return {
+          poiId: prog.poi_id,
+          catalogId: cat?.id,
+          name: cat?.name || dbPoi?.name || `Bod ${String(prog.poi_id).slice(0, 6)}`,
+          title: dbPoi?.title || cat?.name || "",
+          points: cat?.points ?? 1,
+          group: cat?.group ?? null,
+          unlockedAt: prog.unlocked_at,
+          formattedTime,
+          lat: dbPoi?.lat ?? 0,
+          lon: dbPoi?.lon ?? 0,
+          order: idx + 1,
+          instruction: cat?.instruction,
+        };
+      });
+
+      const visitedIdsSet = new Set(sortedProgress.map(p => String(p.poi_id)));
+      const unvisitedPoisList: AdminUnvisitedPoi[] = rawDbPois
+        .filter(p => !visitedIdsSet.has(String(p.id)))
+        .map(p => {
+          const cat = matchPoiToCatalog(p);
+          return {
+            poiId: p.id,
+            catalogId: cat?.id,
+            name: cat?.name || p.name || "",
+            title: p.title || cat?.name || "",
+            points: cat?.points ?? 1,
+            group: cat?.group ?? null,
+            lat: p.lat ?? 0,
+            lon: p.lon ?? 0,
+            instruction: cat?.instruction,
+          };
+        })
+        .sort((a, b) => (a.catalogId || 99) - (b.catalogId || 99));
 
       // Výpočet bodů a skupinových prémií
       const scoreResult = calculateScoreForTeam(visitedPoiIds, rawDbPois);
@@ -444,7 +551,9 @@ export default function AdminPage() {
         calculatedDurationSeconds,
         lastPing,
         overallRank: 0,
-        categoryRank: 0
+        categoryRank: 0,
+        visitedPoisList,
+        unvisitedPoisList,
       };
     });
 
@@ -701,6 +810,7 @@ export default function AdminPage() {
                             {categoryTeams.map((team) => {
                               const lastPingDate = team.lastPing ? new Date(team.lastPing) : null;
                               const cRank = team.categoryRank;
+                              const isExpanded = expandedTeamIds.has(team.teamId);
                               
                               let rankBadge = <span className="font-bold text-slate-500 text-xs">#{cRank}</span>;
                               if (cRank === 1) rankBadge = <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-black text-xs border border-amber-300 shadow-xs" title="1. místo v kategorii">🥇 1.</span>;
@@ -708,69 +818,205 @@ export default function AdminPage() {
                               if (cRank === 3) rankBadge = <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-amber-700/10 text-amber-900 font-black text-xs border border-amber-700/30 shadow-xs" title="3. místo v kategorii">🥉 3.</span>;
 
                               return (
-                                <TableRow key={team.teamId} className={cRank <= 3 ? "bg-amber-500/5 font-medium" : ""}>
-                                  <TableCell className="text-center font-bold">{rankBadge}</TableCell>
-                                  <TableCell className="font-bold text-slate-900">{team.name}</TableCell>
-                                  <TableCell className="text-slate-500 text-xs max-w-[200px] truncate">
-                                    {team.members.join(", ")}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono font-bold text-slate-700">
-                                    {team.visitedPois} / {team.totalPois}
-                                  </TableCell>
-                                  <TableCell className="text-right font-mono font-bold text-slate-700">
-                                    {team.basePoints} b
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {team.completedGroups.length > 0 ? (
-                                      <div className="flex flex-wrap justify-center gap-1">
-                                        {team.completedGroups.map((g, gIdx) => (
-                                          <span key={gIdx} className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200" title={g}>
-                                            +5b ({g.split('-')[0].trim()})
-                                          </span>
-                                        ))}
+                                <React.Fragment key={team.teamId}>
+                                  <TableRow className={cRank <= 3 ? "bg-amber-500/5 font-medium hover:bg-slate-100/70" : "hover:bg-slate-100/70"}>
+                                    <TableCell className="text-center font-bold">{rankBadge}</TableCell>
+                                    <TableCell className="font-bold text-slate-900">{team.name}</TableCell>
+                                    <TableCell className="text-slate-500 text-xs max-w-[200px] truncate">
+                                      {team.members.join(", ")}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleExpandTeam(team.teamId)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 transition-colors font-mono font-bold text-xs cursor-pointer shadow-2xs"
+                                        title="Klikněte pro zobrazení/rozbalení projetých bodů"
+                                      >
+                                        <MapPin className="size-3.5 text-emerald-600 shrink-0" />
+                                        <span>{team.visitedPois} / {team.totalPois}</span>
+                                        {isExpanded ? (
+                                          <ChevronDown className="size-3.5 text-slate-400" />
+                                        ) : (
+                                          <ChevronRight className="size-3.5 text-slate-400" />
+                                        )}
+                                      </button>
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono font-bold text-slate-700">
+                                      {team.basePoints} b
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      {team.completedGroups.length > 0 ? (
+                                        <div className="flex flex-wrap justify-center gap-1">
+                                          {team.completedGroups.map((g, gIdx) => (
+                                            <span key={gIdx} className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200" title={g}>
+                                              +5b ({g.split('-')[0].trim()})
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-300 text-xs">–</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      {team.penaltyPoints > 0 ? (
+                                        <span className="inline-block px-2 py-0.5 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200" title={`Překročeno o ${team.overtimeMinutes} min`}>
+                                          -{team.penaltyPoints} b ({team.overtimeMinutes}m)
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-300 text-xs">0 b</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono font-black text-lg text-primary">
+                                      {team.totalPoints} b
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Input
+                                        type="text"
+                                        placeholder="14:25:00"
+                                        value={finishTimes[team.teamId] || ""}
+                                        onChange={(e) => handleFinishTimeChange(team.teamId, e.target.value)}
+                                        className="w-24 text-center font-mono font-bold text-xs h-8 mx-auto"
+                                      />
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono font-bold text-slate-800">
+                                      {formatTime(team.calculatedDurationSeconds)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs text-slate-400">
+                                      {lastPingDate ? lastPingDate.toLocaleTimeString() : "nikdy"}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 size-8 rounded-full"
+                                          title="Zobrazit projeté body a mapu"
+                                          onClick={() => setSelectedTeamForModal({
+                                            teamId: team.teamId,
+                                            name: team.name,
+                                            category: team.category,
+                                            members: team.members,
+                                            visitedPoisList: team.visitedPoisList,
+                                            unvisitedPoisList: team.unvisitedPoisList,
+                                            basePoints: team.basePoints,
+                                            bonusPoints: team.bonusPoints,
+                                            penaltyPoints: team.penaltyPoints,
+                                            totalPoints: team.totalPoints,
+                                            completedGroups: team.completedGroups,
+                                            calculatedDurationSeconds: team.calculatedDurationSeconds,
+                                            finishTime: team.finishTime,
+                                            trackingPings: rawTracking.filter(p => p.team_id === team.teamId),
+                                            routeCoordinates: officialRouteCoords,
+                                          })}
+                                        >
+                                          <Eye className="size-4" />
+                                        </Button>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="text-red-500 hover:text-red-700 hover:bg-red-50 size-8 rounded-full"
+                                          onClick={() => handleDeleteTeam(team.teamId, team.name)}
+                                          title="Smazat tým"
+                                        >
+                                          <Trash2 className="size-4" />
+                                        </Button>
                                       </div>
-                                    ) : (
-                                      <span className="text-slate-300 text-xs">–</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {team.penaltyPoints > 0 ? (
-                                      <span className="inline-block px-2 py-0.5 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200" title={`Překročeno o ${team.overtimeMinutes} min`}>
-                                        -{team.penaltyPoints} b ({team.overtimeMinutes}m)
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-300 text-xs">0 b</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right font-mono font-black text-lg text-primary">
-                                    {team.totalPoints} b
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Input
-                                      type="text"
-                                      placeholder="14:25:00"
-                                      value={finishTimes[team.teamId] || ""}
-                                      onChange={(e) => handleFinishTimeChange(team.teamId, e.target.value)}
-                                      className="w-24 text-center font-mono font-bold text-xs h-8 mx-auto"
-                                    />
-                                  </TableCell>
-                                  <TableCell className="text-right font-mono font-bold text-slate-800">
-                                    {formatTime(team.calculatedDurationSeconds)}
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs text-slate-400">
-                                    {lastPingDate ? lastPingDate.toLocaleTimeString() : "nikdy"}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="text-red-500 hover:text-red-700 hover:bg-red-50 size-8 rounded-full"
-                                      onClick={() => handleDeleteTeam(team.teamId, team.name)}
-                                    >
-                                      <Trash2 className="size-4" />
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
+                                    </TableCell>
+                                  </TableRow>
+
+                                  {/* Rozbalovací sekce s projetými body */}
+                                  {isExpanded && (
+                                    <TableRow className="bg-slate-50/90 border-b-2 border-slate-300">
+                                      <TableCell colSpan={12} className="p-3 sm:p-4">
+                                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-4">
+                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                            <div className="flex items-center gap-2.5">
+                                              <span className="size-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-black">
+                                                <MapPin className="size-4 text-emerald-700" />
+                                              </span>
+                                              <div>
+                                                <h4 className="font-bold text-slate-900 text-sm">
+                                                  Projeté kontrolní body týmu {team.name}
+                                                </h4>
+                                                <p className="text-xs text-slate-500">
+                                                  Odemčeno {team.visitedPoisList.length} z celkem {team.totalPois} kontrolních bodů (+{team.basePoints} b za kontroly)
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                              <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100/60 border-emerald-200"
+                                                onClick={() => setSelectedTeamForModal({
+                                                  teamId: team.teamId,
+                                                  name: team.name,
+                                                  category: team.category,
+                                                  members: team.members,
+                                                  visitedPoisList: team.visitedPoisList,
+                                                  unvisitedPoisList: team.unvisitedPoisList,
+                                                  basePoints: team.basePoints,
+                                                  bonusPoints: team.bonusPoints,
+                                                  penaltyPoints: team.penaltyPoints,
+                                                  totalPoints: team.totalPoints,
+                                                  completedGroups: team.completedGroups,
+                                                  calculatedDurationSeconds: team.calculatedDurationSeconds,
+                                                  finishTime: team.finishTime,
+                                                  trackingPings: rawTracking.filter(p => p.team_id === team.teamId),
+                                                  routeCoordinates: officialRouteCoords,
+                                                })}
+                                              >
+                                                <Eye className="size-3.5 text-emerald-700" />
+                                                Otevřít mapu &amp; časovou osu
+                                              </Button>
+                                            </div>
+                                          </div>
+
+                                          {team.visitedPoisList.length === 0 ? (
+                                            <div className="py-4 text-center text-xs text-slate-400 italic">
+                                              Tým zatím neprojel žádným kontrolním bodem.
+                                            </div>
+                                          ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                              {team.visitedPoisList.map((poi) => (
+                                                <div
+                                                  key={poi.poiId}
+                                                  className="flex items-start gap-2 bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-lg p-2.5 transition-colors text-xs"
+                                                >
+                                                  <span className="size-5 rounded-full bg-emerald-100 text-emerald-800 font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                                                    {poi.order}
+                                                  </span>
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between gap-1">
+                                                      <span className="font-bold text-slate-900 truncate" title={poi.name}>
+                                                        {poi.catalogId ? `#${poi.catalogId} ` : ""}{poi.name}
+                                                      </span>
+                                                      <span className="font-mono font-bold text-emerald-700 shrink-0">
+                                                        +{poi.points}b
+                                                      </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1">
+                                                      <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                                                        ⏱️ {poi.formattedTime}
+                                                      </span>
+                                                      {poi.group && (
+                                                        <span className="text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded truncate font-medium max-w-[110px]" title={poi.group}>
+                                                          {poi.group.split('-')[0].trim()}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  )}
+                                </React.Fragment>
                               );
                             })}
                           </TableBody>
@@ -783,6 +1029,13 @@ export default function AdminPage() {
             })}
           </div>
         )}
+
+        {/* Modální okno s detailem bodů a interaktivní mapou */}
+        <TeamPoiModal
+          data={selectedTeamForModal}
+          isOpen={!!selectedTeamForModal}
+          onClose={() => setSelectedTeamForModal(null)}
+        />
       </div>
     </div>
   );
